@@ -1,0 +1,11 @@
+* text=auto eol=lf
+
+*.whl binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+
+# Release bundles contain byte-level checksums and must never be normalized.
+release/** -text

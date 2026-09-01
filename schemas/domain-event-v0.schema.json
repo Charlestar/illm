@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://illm.local/schemas/domain-event-v0.schema.json",
+  "title": "DomainEvent v0",
+  "type": "object",
+  "required": ["schema_version", "producer", "seq_no", "monotonic_ns", "kind", "kind_code", "replay_critical", "payload"],
+  "properties": {
+    "schema_version": {"const": 0},
+    "producer": {"type": "string", "minLength": 1},
+    "seq_no": {"type": "integer", "minimum": 0},
+    "monotonic_ns": {"type": "integer", "minimum": 0},
+    "kind": {"type": "string", "minLength": 1},
+    "kind_code": {"type": "integer"},
+    "replay_critical": {"type": "boolean"},
+    "payload": {"type": "object"}
+  },
+  "additionalProperties": false
+}
+

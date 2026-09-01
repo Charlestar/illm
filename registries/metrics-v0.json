@@ -1,0 +1,11 @@
+{
+  "schema_version": 0,
+  "metrics": [
+    {"id": "illm.toy.scheduler.completed_steps.v1", "type": "counter", "unit": "step"},
+    {"id": "illm.process.host_rss.growth_bytes.v1", "type": "gauge", "unit": "byte"},
+    {"id": "illm.capture.diagnostic_event.drop_count.v1", "type": "counter", "unit": "event"},
+    {"id": "illm.capture.critical_event.drop_count.v1", "type": "counter", "unit": "event"},
+    {"id": "illm.replay.state_digest.mismatch_count.v1", "type": "counter", "unit": "mismatch"}
+  ]
+}
+

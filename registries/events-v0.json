@@ -1,0 +1,16 @@
+{
+  "schema_version": 0,
+  "reserved_codes": [[0, 99], [104, 199], [202, 299], [302, 899], [901, 999]],
+  "events": [
+    {"code": 100, "name": "request.arrived", "replay_critical": true},
+    {"code": 101, "name": "request.selected", "replay_critical": true},
+    {"code": 102, "name": "request.deferred", "replay_critical": true},
+    {"code": 103, "name": "request.completed", "replay_critical": true},
+    {"code": 200, "name": "scheduler.step.started", "replay_critical": true},
+    {"code": 201, "name": "scheduler.step.completed", "replay_critical": true},
+    {"code": 300, "name": "checkpoint", "replay_critical": true},
+    {"code": 301, "name": "capture.truncated", "replay_critical": true},
+    {"code": 900, "name": "diagnostic", "replay_critical": false}
+  ]
+}
+

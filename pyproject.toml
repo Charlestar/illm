@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools==83.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "illm"
+version = "0.0.0"
+description = "Inspectable LLM Runtime bootstrap lab"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "iLLM contributors" }]
+dependencies = []
+
+[project.scripts]
+illm = "illm.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers --strict-config"
+testpaths = ["tests/cpu"]
+markers = [
+  "property: deterministic/property-style tests",
+  "stress: bounded-resource stress tests",
+]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "src"
+strict = true
+show_error_codes = true
+pretty = false
+warn_unused_configs = true

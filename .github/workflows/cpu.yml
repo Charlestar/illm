@@ -1,0 +1,43 @@
+name: cpu-clean-room
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  smoke:
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            profile: ci-windows
+          - os: ubuntu-latest
+            profile: ci-linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Bootstrap locked environment
+        run: python scripts/bootstrap.py --profile ${{ matrix.profile }} --locked --write-manifest out/v0.0/toolchain.json --write-manifest-digest out/v0.0/toolchain.sha256
+      - name: CPU tests
+        run: python scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python -m pytest tests/cpu --junitxml out/v0.0/junit.xml
+      - name: Static quality and annotation gate
+        run: python scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python scripts/check_quality.py --output out/v0.0/quality.json
+      - name: Toy capture
+        run: python scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python -m illm demo toy-scheduler --seed 7 --steps 20 --capture out/v0.0
+      - name: R0 playback
+        run: python scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python -m illm replay out/v0.0 --mode trace
+      - name: R1 replay
+        run: python scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python -m illm replay out/v0.0 --mode state --assert-state-digest
+      - name: Seal platform qualification evidence
+        run: python scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python scripts/qualify_v00.py --toolchain-manifest out/v0.0/toolchain.json --junit out/v0.0/junit.xml --quality out/v0.0/quality.json --capture out/v0.0 --output out/v0.0/qualification/${{ matrix.profile }}
+      - name: Upload platform qualification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: v0.0-${{ matrix.profile }}-qualification
+          path: out/v0.0/qualification/${{ matrix.profile }}
+          if-no-files-found: error

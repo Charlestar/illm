@@ -1,0 +1,14 @@
+{
+  "schema_version": 0,
+  "errors": [
+    {"code": "INVALID_ARGUMENT", "exit_code": 64},
+    {"code": "TOOL_NOT_IN_LOCKED_ENV", "exit_code": 69},
+    {"code": "TOOLCHAIN_MISMATCH", "exit_code": 70},
+    {"code": "CAPTURE_INCOMPLETE", "exit_code": 74},
+    {"code": "CAPTURE_CORRUPT", "exit_code": 75},
+    {"code": "REPLAY_DIVERGED", "exit_code": 76},
+    {"code": "UNSUPPORTED_SCHEMA", "exit_code": 78},
+    {"code": "INTERNAL", "exit_code": 1}
+  ]
+}
+

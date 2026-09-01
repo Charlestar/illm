@@ -1,0 +1,1 @@
+{"completed_scheduler_steps":10000,"critical_event_drop_count":0,"diagnostic_drop_count":9997,"duration_s":0.1316403,"exporter_error_count":10000,"forward_progress":true,"offered_events":10000,"retained_events":3,"schema_version":0,"traced_current_growth_bytes":7071,"traced_peak_bytes":7983}

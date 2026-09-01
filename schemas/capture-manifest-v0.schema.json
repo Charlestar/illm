@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://illm.local/schemas/capture-manifest-v0.schema.json",
+  "title": "CaptureManifest v0",
+  "type": "object",
+  "required": ["schema_version", "finalized", "replay_capabilities", "privacy_mode", "critical_event_drop_count", "non_replayable_reasons", "event_count", "final_state_digest", "files", "manifest_digest"],
+  "properties": {
+    "schema_version": {"const": 0},
+    "finalized": {"const": true},
+    "replay_capabilities": {"type": "array", "items": {"enum": ["R0", "R1_TOY"]}},
+    "privacy_mode": {"const": "metadata_only"},
+    "critical_event_drop_count": {"type": "integer", "minimum": 0},
+    "non_replayable_reasons": {"type": "array", "items": {"type": "string"}},
+    "seed": {"type": "integer"},
+    "steps": {"type": "integer", "minimum": 1},
+    "event_count": {"type": "integer", "minimum": 0},
+    "final_state_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "files": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+    "run": {"type": "object"},
+    "manifest_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "additionalProperties": false
+}
+

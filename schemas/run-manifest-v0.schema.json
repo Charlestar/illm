@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://illm.local/schemas/run-manifest-v0.schema.json",
+  "title": "RunManifest v0",
+  "type": "object",
+  "required": ["git_revision", "git_dirty", "python", "implementation", "os", "arch", "seed", "event_schema_version", "privacy_mode", "critical_event_drop_count"],
+  "properties": {
+    "git_revision": {"type": "string"},
+    "git_dirty": {"type": ["boolean", "null"]},
+    "python": {"type": "string"},
+    "implementation": {"type": "string"},
+    "os": {"type": "string"},
+    "arch": {"type": "string"},
+    "seed": {"type": "integer"},
+    "event_schema_version": {"const": 0},
+    "privacy_mode": {"const": "metadata_only"},
+    "critical_event_drop_count": {"type": "integer", "minimum": 0}
+  },
+  "additionalProperties": false
+}

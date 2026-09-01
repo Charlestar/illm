@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://illm.local/schemas/release-manifest-v0.schema.json",
+  "title": "ReleaseManifest v0",
+  "type": "object",
+  "required": ["schema_version", "spec_status", "release_stage", "qualification_tier", "qualification_profiles", "performance_outcome", "lts_state", "toolchain_manifest_digest", "capture_manifest_digest", "test_report_digest", "event_stall_digest", "manifest_digest"],
+  "properties": {
+    "schema_version": {"const": 0},
+    "spec_status": {"enum": ["draft", "accepted", "implemented", "released", "superseded"]},
+    "release_stage": {"enum": ["dev_snapshot", "release_candidate", "released", "withdrawn"]},
+    "qualification_tier": {"enum": ["unqualified", "learning_complete", "functionally_qualified", "stable_released"]},
+    "qualification_profiles": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["profile_id", "result", "required_for_functional", "environment_manifest_digest", "evidence_digest", "reason"],
+        "properties": {
+          "profile_id": {"type": "string", "minLength": 1},
+          "result": {"enum": ["not_run", "pass", "fail", "invalid", "not_run_resource_unavailable", "not_applicable"]},
+          "required_for_functional": {"type": "boolean"},
+          "environment_manifest_digest": {"type": ["string", "null"]},
+          "evidence_digest": {"type": ["string", "null"]},
+          "reason": {"type": ["string", "null"]}
+        },
+        "additionalProperties": false
+      }
+    },
+    "performance_outcome": {"enum": ["not_applicable", "pending", "NoCandidate", "Adopt", "No-go"]},
+    "lts_state": {"enum": ["not_applicable", "candidate", "promoted", "eol"]},
+    "toolchain_manifest_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "capture_manifest_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "test_report_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "event_stall_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "manifest_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "additionalProperties": false
+}

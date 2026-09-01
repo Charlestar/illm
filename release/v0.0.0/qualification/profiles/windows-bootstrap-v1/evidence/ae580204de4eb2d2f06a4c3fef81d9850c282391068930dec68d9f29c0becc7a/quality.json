@@ -1,0 +1,1 @@
+{"checked_python_files": 19, "issues": [], "schema_version": 0, "status": "pass", "type_check": {"output": ["Success: no issues found in 35 source files"], "returncode": 0, "status": "pass", "tool": "mypy", "version": "1.18.2"}}

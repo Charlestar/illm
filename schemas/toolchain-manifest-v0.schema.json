@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://illm.local/schemas/toolchain-manifest-v0.schema.json",
+  "title": "ToolchainManifest v0",
+  "type": "object",
+  "required": ["schema_version", "finalized", "profile", "os", "arch", "python_version", "project_root", "environment_root", "python_executable", "entrypoints", "installed_packages", "environment_id", "bootstrap_digest", "lock_digest", "project_root_digest", "manifest_digest"],
+  "properties": {
+    "schema_version": {"const": 0},
+    "finalized": {"const": true},
+    "profile": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,47}$"},
+    "os": {"type": "string"},
+    "arch": {"type": "string"},
+    "python_version": {"type": "string"},
+    "project_root": {"type": "string"},
+    "environment_root": {"type": "string"},
+    "python_executable": {"type": "string"},
+    "entrypoints": {"type": "object", "additionalProperties": {"type": "string"}},
+    "installed_packages": {"type": "object", "additionalProperties": {"type": "string"}},
+    "environment_id": {"type": "string", "format": "uuid"},
+    "bootstrap_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "lock_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "project_root_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "manifest_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "additionalProperties": false
+}
