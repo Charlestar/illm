@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "reserved_codes": [
+    [
+      0,
+      999
+    ],
+    [
+      1002,
+      1099
+    ],
+    [
+      1103,
+      1199
+    ],
+    [
+      1203,
+      1299
+    ],
+    [
+      1302,
+      1999
+    ]
+  ],
+  "events": [
+    {
+      "code": 1000,
+      "name": "request.accepted",
+      "replay_critical": true
+    },
+    {
+      "code": 1001,
+      "name": "request.tokenized",
+      "replay_critical": true
+    },
+    {
+      "code": 1100,
+      "name": "model.forward.started",
+      "replay_critical": true
+    },
+    {
+      "code": 1101,
+      "name": "model.op",
+      "replay_critical": true
+    },
+    {
+      "code": 1102,
+      "name": "model.forward.completed",
+      "replay_critical": true
+    },
+    {
+      "code": 1200,
+      "name": "sampling.started",
+      "replay_critical": true
+    },
+    {
+      "code": 1201,
+      "name": "sampling.selected",
+      "replay_critical": true
+    },
+    {
+      "code": 1202,
+      "name": "sampling.failed",
+      "replay_critical": true
+    },
+    {
+      "code": 1300,
+      "name": "request.finished",
+      "replay_critical": true
+    },
+    {
+      "code": 1301,
+      "name": "request.failed",
+      "replay_critical": true
+    }
+  ]
+}

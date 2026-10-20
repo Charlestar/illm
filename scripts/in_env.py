@@ -25,6 +25,14 @@ from _toolchain_common import (
     normalized_path,
     project_digest,
 )
+from _runtime_artifacts import (
+    RUNTIME_MANIFEST_FIELDS,
+    artifact_identities,
+    isolated_environment,
+    load_runtime_lock,
+    runtime_probe,
+    verify_runtime_cache,
+)
 
 
 def _split_args(argv: Sequence[str]) -> tuple[list[str], list[str]]:
@@ -59,14 +67,16 @@ def _load_manifest(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ToolchainFailure("TOOLCHAIN_MISMATCH", "toolchain manifest must be an object")
     manifest = cast(dict[str, Any], value)
-    if manifest.get("schema_version") != SCHEMA_VERSION or manifest.get("finalized") is not True:
-        raise ToolchainFailure("TOOLCHAIN_MISMATCH", "manifest is not a finalized V0 toolchain")
-    if set(manifest) != TOOLCHAIN_FIELDS:
+    version = manifest.get("schema_version")
+    if version not in {SCHEMA_VERSION, 1} or isinstance(version, bool) or manifest.get("finalized") is not True:
+        raise ToolchainFailure("TOOLCHAIN_MISMATCH", "manifest is not a finalized supported toolchain")
+    fields = TOOLCHAIN_FIELDS | RUNTIME_MANIFEST_FIELDS if version == 1 else TOOLCHAIN_FIELDS
+    if set(manifest) != fields:
         raise ToolchainFailure(
             "TOOLCHAIN_MISMATCH",
-            "toolchain manifest fields do not match schema v0",
-            missing=sorted(TOOLCHAIN_FIELDS - set(manifest)),
-            extra=sorted(set(manifest) - TOOLCHAIN_FIELDS),
+            "toolchain manifest fields do not match schema",
+            missing=sorted(fields - set(manifest)),
+            extra=sorted(set(manifest) - fields),
         )
     if manifest.get("manifest_digest") != manifest_digest(manifest):
         raise ToolchainFailure("TOOLCHAIN_MISMATCH", "manifest digest mismatch")
@@ -82,7 +92,8 @@ def _verify_handshake(manifest: dict[str, Any], python: Path, environment_root: 
         "print(json.dumps({'sys_executable':str(pathlib.Path(sys.executable).resolve()),"
         "'environment_id':d.get('environment_id'),'lock_digest':d.get('lock_digest'),"
         "'sentinel_python':d.get('python_executable'),'state':d.get('state'),"
-        "'os':platform.system(),'arch':platform.machine(),'python_version':platform.python_version()},sort_keys=True))"
+        "'os':platform.system(),'arch':platform.machine(),'python_version':platform.python_version(),"
+        "'runtime_profile_id':d.get('runtime_profile_id'),'runtime_lock_digest':d.get('runtime_lock_digest')},sort_keys=True))"
     )
     process = subprocess.run(
         [str(python), "-I", "-c", handshake_code],
@@ -110,6 +121,8 @@ def _verify_handshake(manifest: dict[str, Any], python: Path, environment_root: 
         "os": manifest["os"],
         "arch": manifest["arch"],
         "python_version": manifest["python_version"],
+        "runtime_profile_id": manifest.get("runtime_profile_id"),
+        "runtime_lock_digest": manifest.get("runtime_lock_digest"),
     }
     actual = dict(result)
     actual["sys_executable"] = normalized_path(Path(str(actual.get("sys_executable", ""))))
@@ -167,12 +180,22 @@ def _verify_manifest(manifest: dict[str, Any], expected_digest_file: Path | None
         Path(str(entrypoints.get("illm", "")))
     ) != normalized_path(expected_entrypoint):
         raise ToolchainFailure("TOOLCHAIN_MISMATCH", "locked entrypoint identity mismatch")
-    expected_packages = expected_package_versions(project_root)
+    runtime_lock = None
+    if manifest["schema_version"] == 1:
+        runtime_lock = load_runtime_lock(project_root, str(manifest["runtime_profile_id"]))
+        if (
+            manifest["runtime_lock_digest"] != runtime_lock["lock_digest"]
+            or manifest["runtime_artifacts"] != artifact_identities(runtime_lock)
+            or manifest["os"] != runtime_lock["target"]["os"]
+            or manifest["python_version"] != runtime_lock["target"]["python_validation_patch"]
+        ):
+            raise ToolchainFailure("TOOLCHAIN_MISMATCH", "manifest runtime profile/artifact identity mismatch")
+    expected_packages = expected_package_versions(project_root, runtime_lock)
     if manifest.get("installed_packages") != expected_packages:
         raise ToolchainFailure("TOOLCHAIN_MISMATCH", "manifest package set does not match lock files")
     checks = {
         "bootstrap_digest": bootstrap_digest(project_root),
-        "lock_digest": lock_digest(project_root),
+        "lock_digest": lock_digest(project_root, runtime_lock),
         "project_root_digest": project_digest(project_root),
     }
     mismatches = {
@@ -190,6 +213,10 @@ def _verify_manifest(manifest: dict[str, Any], expected_digest_file: Path | None
         if expected_digest != manifest["manifest_digest"]:
             raise ToolchainFailure("TOOLCHAIN_MISMATCH", "manifest digest sidecar mismatch")
     _verify_handshake(manifest, python, environment_root)
+    if runtime_lock:
+        verify_runtime_cache(runtime_lock, Path(str(manifest["artifact_cache"])))
+        if runtime_probe(python, runtime_lock) != manifest["runtime_probe"]:
+            raise ToolchainFailure("TOOLCHAIN_MISMATCH", "runtime import/device probe identity mismatch")
     return project_root, environment_root
 
 
@@ -230,9 +257,7 @@ def run(argv: Sequence[str] | None = None) -> int:
     manifest = _load_manifest(args.manifest.resolve())
     project_root, environment_root = _verify_manifest(manifest, args.expected_manifest_digest_file)
     command = _resolve_command(manifest, environment_root, child)
-    child_environment = os.environ.copy()
-    child_environment.pop("PYTHONHOME", None)
-    child_environment.pop("PYTHONPATH", None)
+    child_environment = isolated_environment()
     child_environment["VIRTUAL_ENV"] = str(environment_root)
     child_environment["ILLM_ENVIRONMENT_ID"] = str(manifest["environment_id"])
     child_environment["ILLM_LOCK_DIGEST"] = str(manifest["lock_digest"])

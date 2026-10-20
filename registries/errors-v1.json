@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "extends": "errors-v0.json",
+  "errors": [
+    {"code": "UNSUPPORTED_MODEL", "exit_code": 80},
+    {"code": "INVALID_MODEL_CONFIG", "exit_code": 81},
+    {"code": "INVALID_WEIGHTS", "exit_code": 82},
+    {"code": "DUPLICATE_WEIGHT", "exit_code": 83},
+    {"code": "MODEL_ARTIFACT_MISSING", "exit_code": 84},
+    {"code": "UNSUPPORTED_SAMPLING_PARAMETER", "exit_code": 85},
+    {"code": "NUMERICAL_ERROR", "exit_code": 86},
+    {"code": "ORACLE_DIVERGED", "exit_code": 87},
+    {"code": "RESOURCE_EXHAUSTED", "exit_code": 88},
+    {"code": "ENGINE_BUSY", "exit_code": 89}
+  ]
+}

@@ -199,8 +199,16 @@ def verify_release_manifest(path: Path) -> dict[str, Any]:
 
 
 def _artifact_json(path: Path) -> dict[str, Any]:
+    def unique_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in result:
+                raise ValueError("duplicate release JSON key")
+            result[key] = item
+        return result
+
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_pairs)
     except (OSError, ValueError) as exc:
         raise IllmError(ErrorCode.INVALID_ARGUMENT, "release artifact is unreadable", {"file": path.name}) from exc
     if not isinstance(value, dict):
@@ -317,6 +325,11 @@ def verify_release_bundle(
 
     if path.is_symlink() or path.parent.is_symlink():
         raise IllmError(ErrorCode.INVALID_ARGUMENT, "release root cannot be a symlink")
+    header = _artifact_json(path)
+    if type(header.get("schema_version")) is int and header["schema_version"] == 1:
+        from illm.reference_release import verify_reference_release_bundle
+
+        return verify_reference_release_bundle(path, expected_source_identity=expected_source_identity)
     result = verify_release_manifest(path)
     root = path.resolve().parent
     files = _inventory_files(root)

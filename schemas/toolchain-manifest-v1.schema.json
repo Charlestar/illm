@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://illm.local/schemas/toolchain-manifest-v1.schema.json",
+  "title": "ToolchainManifest v1 with explicit runtime artifact authority",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "finalized",
+    "profile",
+    "os",
+    "arch",
+    "python_version",
+    "project_root",
+    "environment_root",
+    "python_executable",
+    "entrypoints",
+    "installed_packages",
+    "environment_id",
+    "bootstrap_digest",
+    "lock_digest",
+    "project_root_digest",
+    "manifest_digest",
+    "runtime_profile_id",
+    "runtime_lock_digest",
+    "artifact_cache",
+    "runtime_artifacts",
+    "runtime_probe"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "finalized": {
+      "const": true
+    },
+    "profile": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,47}$"
+    },
+    "os": {
+      "type": "string"
+    },
+    "arch": {
+      "type": "string"
+    },
+    "python_version": {
+      "type": "string"
+    },
+    "project_root": {
+      "type": "string"
+    },
+    "environment_root": {
+      "type": "string"
+    },
+    "python_executable": {
+      "type": "string"
+    },
+    "entrypoints": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "installed_packages": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "environment_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "bootstrap_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "lock_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "project_root_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "manifest_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "runtime_profile_id": {
+      "type": "string"
+    },
+    "runtime_lock_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "artifact_cache": {
+      "type": "string"
+    },
+    "runtime_artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "version",
+          "filename",
+          "sha256",
+          "size_bytes"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "runtime_probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "torch",
+        "transformers",
+        "safetensors",
+        "tokenizers",
+        "cuda_build",
+        "smoke_sum",
+        "device",
+        "gpu_name",
+        "device_capability",
+        "compiled_arches"
+      ],
+      "properties": {
+        "torch": {
+          "type": "string"
+        },
+        "transformers": {
+          "type": "string"
+        },
+        "safetensors": {
+          "type": "string"
+        },
+        "tokenizers": {
+          "type": "string"
+        },
+        "cuda_build": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "smoke_sum": {
+          "const": 3.0
+        },
+        "device": {
+          "enum": [
+            "cpu",
+            "cuda"
+          ]
+        },
+        "gpu_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "device_capability": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "integer"
+          }
+        },
+        "compiled_arches": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

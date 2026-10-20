@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+import tomllib
 
 import pytest
 
@@ -71,9 +72,9 @@ def test_runner_uses_manifest_interpreter_despite_path_poisoning(tmp_path: Path)
     )
     assert process.returncode == 0, process.stderr
     assert Path(json.loads(process.stdout)["python"]).resolve() == Path(manifest["python_executable"]).resolve()
-    assert manifest["installed_packages"] == {
+    expected_packages = {
         "colorama": "0.4.6",
-        "illm": "0.0.0",
+        "illm": tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"],
         "iniconfig": "2.3.0",
         "packaging": "26.3",
         "mypy": "1.18.2",
@@ -87,6 +88,9 @@ def test_runner_uses_manifest_interpreter_despite_path_poisoning(tmp_path: Path)
         "typing-extensions": "4.16.0",
         "wheel": "0.47.0",
     }
+    if manifest["schema_version"] == 1:
+        expected_packages.update({artifact["name"]: artifact["version"] for artifact in manifest["runtime_artifacts"]})
+    assert manifest["installed_packages"] == expected_packages
     assert not marker.exists()
 
 

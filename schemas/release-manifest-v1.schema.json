@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "illm:release-manifest:v1",
+  "title": "iLLM V0.1 ReleaseManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "release_version", "release_tag", "spec_status", "release_stage", "qualification_tier", "qualification_profiles", "performance_outcome", "lts_state", "source_identity", "primary_profile_id", "toolchain_manifest_digest", "capture_manifest_digest", "test_report_digest", "benchmark_report_digest", "rollback_report_digest", "documentation_digest", "manifest_digest"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "release_version": {"const": "0.1.0"},
+    "release_tag": {"const": "v0.1.0"},
+    "spec_status": {"enum": ["implemented", "released"]},
+    "release_stage": {"enum": ["release_candidate", "released"]},
+    "qualification_tier": {"const": "functionally_qualified"},
+    "performance_outcome": {"const": "not_applicable"},
+    "lts_state": {"const": "not_applicable"},
+    "primary_profile_id": {"const": "tiny-reference-cpu-v1"},
+    "source_identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["project_root_digest", "bootstrap_digest", "base_lock_digest"],
+      "properties": {"project_root_digest": {"$ref": "#/$defs/sha256"}, "bootstrap_digest": {"$ref": "#/$defs/sha256"}, "base_lock_digest": {"$ref": "#/$defs/sha256"}}
+    },
+    "qualification_profiles": {
+      "type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/profile"},
+      "allOf": [
+        {"contains": {"properties": {"profile_id": {"const": "tiny-reference-cpu-v1"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"profile_id": {"const": "real-model-single-gpu-v1"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"profile_id": {"const": "clean-room-release-v1"}}}, "minContains": 1, "maxContains": 1}
+      ]
+    },
+    "toolchain_manifest_digest": {"$ref": "#/$defs/sha256"},
+    "capture_manifest_digest": {"$ref": "#/$defs/sha256"},
+    "test_report_digest": {"$ref": "#/$defs/sha256"},
+    "benchmark_report_digest": {"$ref": "#/$defs/sha256"},
+    "rollback_report_digest": {"$ref": "#/$defs/sha256"},
+    "documentation_digest": {"$ref": "#/$defs/sha256"},
+    "manifest_digest": {"$ref": "#/$defs/sha256"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"release_stage": {"const": "released"}}},
+      "then": {"properties": {"spec_status": {"const": "released"}}},
+      "else": {"properties": {"spec_status": {"const": "implemented"}}}
+    }
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "profile": {
+      "type": "object", "additionalProperties": false,
+      "required": ["profile_id", "result", "required_for_functional", "environment_manifest_digest", "evidence_digest", "reason"],
+      "properties": {
+        "profile_id": {"enum": ["tiny-reference-cpu-v1", "real-model-single-gpu-v1", "clean-room-release-v1"]},
+        "result": {"const": "pass"}, "required_for_functional": {"const": true},
+        "environment_manifest_digest": {"$ref": "#/$defs/sha256"}, "evidence_digest": {"$ref": "#/$defs/sha256"}, "reason": {"type": "null"}
+      }
+    }
+  }
+}

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "illm"
-version = "0.0.0"
-description = "Inspectable LLM Runtime bootstrap lab"
+version = "0.1.0.dev0"
+description = "Inspectable LLM Runtime learning reference engine"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -21,9 +21,19 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.data-files]
+"share/illm/fixtures/tiny-decoder" = [
+  "fixtures/tiny-decoder/config.json",
+  "fixtures/tiny-decoder/tokenizer.json",
+  "fixtures/tiny-decoder/supported-model-spec.json",
+  "fixtures/tiny-decoder/weight-load-manifest.json",
+  "fixtures/tiny-decoder/fixture-manifest.json",
+  "fixtures/tiny-decoder/model.safetensors",
+]
+
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers --strict-config"
-testpaths = ["tests/cpu"]
+testpaths = ["tests/cpu", "tests/model"]
 markers = [
   "property: deterministic/property-style tests",
   "stress: bounded-resource stress tests",

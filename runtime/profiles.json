@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "aliases": {
+    "v01-cpu": {"Windows": "py312-win-amd64-cpu", "Linux": "py312-linux-x86_64-cpu"},
+    "v01-cuda": {"Linux": "py312-linux-x86_64-cu126"}
+  },
+  "profiles": {
+    "py312-win-amd64-cpu": {
+      "artifact_lock": "runtime/artifacts/py312-win-amd64-cpu.json",
+      "lock_digest": "5149ad41ff2e0f261fbec8fe11dcefe2bed90ab8431b1c5339b8e08b59320a34"
+    },
+    "py312-linux-x86_64-cpu": {
+      "artifact_lock": "runtime/artifacts/py312-linux-x86_64-cpu.json",
+      "lock_digest": "e0e40645e6e54f053b08587c030331f665e5cf648143f846b284960e09f4d799"
+    },
+    "py312-linux-x86_64-cu126": {
+      "artifact_lock": "runtime/artifacts/py312-linux-x86_64-cu126.json",
+      "lock_digest": "f190bf575dd92c56a2526feabd458144ffab19b8d7e85b644a76277a9cfcc56c"
+    }
+  }
+}

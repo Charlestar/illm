@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "iLLM RuntimeArtifactLock v1 preparation schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "profile_id",
+    "target",
+    "roots",
+    "marker_environment",
+    "artifacts",
+    "dependency_edges",
+    "status",
+    "wheel_bytes_downloaded",
+    "lock_digest"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "illm-runtime-artifact-lock"
+    },
+    "profile_id": {
+      "enum": [
+        "py312-win-amd64-cpu",
+        "py312-linux-x86_64-cpu",
+        "py312-linux-x86_64-cu126"
+      ]
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os",
+        "platform",
+        "torch_channel",
+        "python_implementation",
+        "python_minor",
+        "python_validation_patch",
+        "glibc_floor"
+      ],
+      "properties": {
+        "os": {
+          "enum": [
+            "Windows",
+            "Linux"
+          ]
+        },
+        "platform": {
+          "enum": [
+            "win_amd64",
+            "manylinux_2_28_x86_64"
+          ]
+        },
+        "torch_channel": {
+          "enum": [
+            "cpu",
+            "cu126"
+          ]
+        },
+        "python_implementation": {
+          "const": "cpython"
+        },
+        "python_minor": {
+          "const": "3.12"
+        },
+        "python_validation_patch": {
+          "enum": [
+            "3.12.3",
+            "3.12.14"
+          ]
+        },
+        "glibc_floor": {
+          "enum": [
+            null,
+            "2.28"
+          ]
+        }
+      }
+    },
+    "roots": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "string"
+      }
+    },
+    "marker_environment": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "version",
+          "filename",
+          "url",
+          "sha256",
+          "size_bytes",
+          "source",
+          "metadata_url",
+          "metadata_sha256",
+          "requires_python",
+          "requires_dist",
+          "cache_key"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          },
+          "version": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.+%-]+\\.whl$"
+          },
+          "url": {
+            "type": "string",
+            "pattern": "^https://"
+          },
+          "sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "source": {
+            "type": "string",
+            "pattern": "^https://"
+          },
+          "metadata_url": {
+            "type": "string",
+            "pattern": "^https://.*\\.metadata$"
+          },
+          "metadata_sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "requires_python": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requires_dist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cache_key": {
+            "type": "string",
+            "pattern": "^sha256/[0-9a-f]{2}/[0-9a-f]{64}/[A-Za-z0-9_.+%-]+\\.whl$"
+          }
+        }
+      }
+    },
+    "dependency_edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "requirement"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "requirement": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "status": {
+      "const": "metadata_resolved_not_installed"
+    },
+    "wheel_bytes_downloaded": {
+      "const": 0
+    },
+    "lock_digest": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

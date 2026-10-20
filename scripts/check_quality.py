@@ -56,7 +56,7 @@ def _run_mypy(project_root: Path) -> tuple[dict[str, object], list[str]]:
         "mypy",
         "src/illm",
         "scripts",
-        "tests/cpu",
+        "tests",
     ]
     process = subprocess.run(
         command,
@@ -88,7 +88,7 @@ def _run_mypy(project_root: Path) -> tuple[dict[str, object], list[str]]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run the V0.0 static quality and annotation gate")
+    parser = argparse.ArgumentParser(description="Run strict type, static quality and annotation checks")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     root = Path(__file__).resolve().parents[1]

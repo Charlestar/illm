@@ -1,0 +1,548 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://illm.local/schemas/reference-event-v1.schema.json",
+  "title": "ReferenceEvent v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "producer",
+    "seq_no",
+    "monotonic_ns",
+    "kind",
+    "kind_code",
+    "replay_critical",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "producer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "seq_no": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "monotonic_ns": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "kind": {
+      "type": "string"
+    },
+    "kind_code": {
+      "enum": [
+        1000,
+        1001,
+        1100,
+        1101,
+        1102,
+        1200,
+        1201,
+        1202,
+        1300,
+        1301
+      ]
+    },
+    "replay_critical": {
+      "const": true
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "error": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{0,95}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind_code": {
+            "const": 1000
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "request.accepted"
+          },
+          "payload": {
+            "type": "object",
+            "required": [
+              "request_id",
+              "max_new_tokens"
+            ],
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "max_new_tokens": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind_code": {
+            "const": 1001
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "request.tokenized"
+          },
+          "payload": {
+            "type": "object",
+            "required": [
+              "request_id",
+              "input_tokens",
+              "input_digest"
+            ],
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "input_tokens": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "input_digest": {
+                "$ref": "#/$defs/digest"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind_code": {
+            "const": 1100
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "model.forward.started"
+          },
+          "payload": {
+            "type": "object",
+            "required": [
+              "request_id",
+              "output_position",
+              "context_tokens"
+            ],
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "output_position": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "context_tokens": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind_code": {
+            "const": 1101
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "model.op"
+          },
+          "payload": {
+            "type": "object",
+            "required": [
+              "request_id",
+              "output_position",
+              "op_name",
+              "shape",
+              "dtype"
+            ],
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "output_position": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "op_name": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9_.]{1,160}$"
+              },
+              "shape": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "dtype": {
+                "enum": [
+                  "fp32",
+                  "float32",
+                  "torch.float32",
+                  "fp16",
+                  "float16",
+                  "torch.float16",
+                  "bf16",
+                  "bfloat16",
+                  "torch.bfloat16"
+                ]
+              },
+              "duration_ns": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "summary": {
+                "type": "object",
+                "properties": {
+                  "min": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "max": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "mean": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "l2": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "finite_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "nonfinite_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind_code": {
+            "const": 1102
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "model.forward.completed"
+          },
+          "payload": {
+            "type": "object",
+            "required": [
+              "request_id",
+              "output_position",
+              "logits_digest"
+            ],
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "output_position": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "logits_digest": {
+                "$ref": "#/$defs/digest"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind_code": {
+            "const": 1200
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "sampling.started"
+          },
+          "payload": {
+            "type": "object",
+            "required": [
+              "request_id",
+              "output_position",
+              "sampling_spec_digest"
+            ],
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "output_position": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "sampling_spec_digest": {
+                "$ref": "#/$defs/digest"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind_code": {
+            "const": 1201
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "sampling.selected"
+          },
+          "payload": {
+            "type": "object",
+            "required": [
+              "request_id",
+              "output_position",
+              "sampling_spec_digest",
+              "logits_digest",
+              "draw_address",
+              "selected_digest"
+            ],
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "output_position": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "sampling_spec_digest": {
+                "$ref": "#/$defs/digest"
+              },
+              "logits_digest": {
+                "$ref": "#/$defs/digest"
+              },
+              "draw_address": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "prefixItems": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 18446744073709552000
+                      },
+                      {
+                        "const": 0
+                      },
+                      {
+                        "const": 0
+                      }
+                    ],
+                    "items": false
+                  }
+                ]
+              },
+              "selected_digest": {
+                "$ref": "#/$defs/digest"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind_code": {
+            "const": 1202
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "sampling.failed"
+          },
+          "payload": {
+            "type": "object",
+            "required": [
+              "request_id",
+              "output_position",
+              "error_code"
+            ],
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "output_position": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "error_code": {
+                "$ref": "#/$defs/error"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind_code": {
+            "const": 1300
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "request.finished"
+          },
+          "payload": {
+            "type": "object",
+            "required": [
+              "request_id",
+              "output_tokens",
+              "output_digest",
+              "finish_reason"
+            ],
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "output_tokens": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "output_digest": {
+                "$ref": "#/$defs/digest"
+              },
+              "finish_reason": {
+                "enum": [
+                  "MAX_NEW_TOKENS",
+                  "EOS"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind_code": {
+            "const": 1301
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "request.failed"
+          },
+          "payload": {
+            "type": "object",
+            "required": [
+              "request_id",
+              "error_code"
+            ],
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "error_code": {
+                "$ref": "#/$defs/error"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  ]
+}

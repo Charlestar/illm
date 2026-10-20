@@ -22,7 +22,10 @@ def _manifest_path() -> Path:
     value = os.environ.get("ILLM_TOOLCHAIN_MANIFEST")
     if not value:
         pytest.skip("test must run through scripts/in_env.py")
-    return Path(value)
+    path = Path(value)
+    if json.loads(path.read_text(encoding="utf-8"))["schema_version"] != 0:
+        pytest.skip("V0.0 producer requires schema0; executed separately by legacy-format-contract CI")
+    return path
 
 
 def _inputs(tmp_path: Path) -> tuple[Path, Path, Path]:

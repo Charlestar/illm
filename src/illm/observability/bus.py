@@ -30,7 +30,7 @@ class BoundedMemorySink:
     critical_drop_count: int = 0
 
     def __post_init__(self) -> None:
-        if self.capacity < 1:
+        if type(self.capacity) is not int or self.capacity < 1:
             raise ValueError("capacity must be positive")
         self._queue = deque()
 
@@ -143,7 +143,7 @@ class EventBus:
     _closed: bool = field(default=False, init=False)
 
     def __post_init__(self) -> None:
-        if self.best_effort_capacity < 1:
+        if type(self.best_effort_capacity) is not int or self.best_effort_capacity < 1:
             raise ValueError("best_effort_capacity must be positive")
         self._workers = tuple(
             _ExporterWorker(sink, self.best_effort_capacity, self._record_error, self._record_drop)

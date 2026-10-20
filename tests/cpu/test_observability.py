@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from threading import Event, Thread
+from typing import Any
 
 import pytest
 
@@ -11,6 +12,14 @@ from illm.observability import BoundedMemorySink, EventBus, NoopSink
 
 def _event(seq: int, kind: EventKind) -> DomainEvent:
     return DomainEvent("test", seq, seq + 1, kind, {})
+
+
+@pytest.mark.parametrize("capacity", [False, True, 0, -1, 2.5, float("nan"), "2", None])
+def test_bounded_queue_capacity_is_a_positive_integer(capacity: Any) -> None:
+    with pytest.raises(ValueError):
+        BoundedMemorySink(capacity=capacity)
+    with pytest.raises(ValueError):
+        EventBus((), best_effort_capacity=capacity)
 
 
 def test_diagnostic_events_drop_without_unbounded_growth() -> None:

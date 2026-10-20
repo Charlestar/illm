@@ -80,25 +80,37 @@ def digest_files(project_root: Path, paths: Iterable[Path]) -> str:
     return digest_entries(entries)
 
 
-def lock_digest(project_root: Path) -> str:
-    locks = sorted(project_root.glob("requirements-*.lock"))
+def lock_digest(project_root: Path, runtime_lock: dict[str, Any] | None = None) -> str:
+    locks = [project_root / name for name in ("requirements-bootstrap.lock", "requirements-dev.lock")]
     wheels = sorted((project_root / "vendor" / "wheels").glob("*.whl"))
-    if len(locks) < 2 or not wheels:
+    if not all(path.is_file() for path in locks) or not wheels:
         raise ToolchainFailure("TOOLCHAIN_MISMATCH", "offline lock or wheelhouse is missing")
-    return digest_files(project_root, [*locks, *wheels])
+    base = digest_files(project_root, [*locks, *wheels])
+    if runtime_lock is None:
+        return base
+    return sha256_bytes(canonical_bytes({"base_lock_digest": base, "runtime_lock_digest": runtime_lock["lock_digest"]}))
 
 
 def normalize_distribution_name(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def expected_package_versions(project_root: Path) -> dict[str, str]:
+def expected_package_versions(project_root: Path, runtime_lock: dict[str, Any] | None = None) -> dict[str, str]:
     versions: dict[str, str] = {}
-    for lock in sorted(project_root.glob("requirements-*.lock")):
+    for lock in [project_root / name for name in ("requirements-bootstrap.lock", "requirements-dev.lock")]:
         for line in lock.read_text(encoding="utf-8").splitlines():
             match = LOCK_REQUIREMENT_PATTERN.match(line.strip())
             if match:
-                versions[normalize_distribution_name(match.group(1))] = match.group(2)
+                name, version = normalize_distribution_name(match.group(1)), match.group(2)
+                if name in versions and versions[name] != version:
+                    raise ToolchainFailure("TOOLCHAIN_MISMATCH", "shared dependency pins conflict", package=name)
+                versions[name] = version
+    if runtime_lock is not None:
+        for artifact in runtime_lock["artifacts"]:
+            name, version = str(artifact["name"]), str(artifact["version"])
+            if name in versions and versions[name] != version:
+                raise ToolchainFailure("TOOLCHAIN_MISMATCH", "runtime and shared dependency pins conflict", package=name)
+            versions[name] = version
     project = tomllib.loads((project_root / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     versions[normalize_distribution_name(str(project["name"]))] = str(project["version"])
     return dict(sorted(versions.items()))
@@ -116,7 +128,7 @@ def installed_packages_probe_code() -> str:
 def bootstrap_digest(project_root: Path) -> str:
     return digest_files(
         project_root,
-        [project_root / "scripts" / "bootstrap.py", project_root / "scripts" / "_toolchain_common.py"],
+        [project_root / "scripts" / name for name in ("bootstrap.py", "_toolchain_common.py", "_runtime_artifacts.py")],
     )
 
 
@@ -140,6 +152,9 @@ def project_digest(project_root: Path) -> str:
         "tests",
         "schemas",
         "registries",
+        "runtime",
+        "configs",
+        "fixtures",
     ):
         root = project_root / relative
         if root.exists():
