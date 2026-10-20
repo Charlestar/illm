@@ -44,6 +44,17 @@ RUNTIME_LOCKS = {
     "py312-linux-x86_64-cpu": "e0e40645e6e54f053b08587c030331f665e5cf648143f846b284960e09f4d799",
     "py312-linux-x86_64-cu126": "f190bf575dd92c56a2526feabd458144ffab19b8d7e85b644a76277a9cfcc56c",
 }
+_SUBTEST_CASE_RE = re.compile(
+    r"^(?P<parent>.+)\[illm-subtest#(?P<sequence>[1-9][0-9]*):(?P<context>\{.*\})\]$",
+)
+_PYTEST_COLLECTION_RE = re.compile(r"^collected (?P<tests>[1-9][0-9]*) items?$", re.ASCII)
+_PYTEST_SUMMARY_RE = re.compile(
+    r"^=+ (?P<passed>[1-9][0-9]*) passed(?:, (?P<skipped>[1-9][0-9]*) skipped)? "
+    r"in (?P<seconds>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?)s(?: \([0-9]+:[0-5][0-9]:[0-5][0-9]\))? =+$",
+    re.ASCII,
+)
+_PYTEST_PASSED_CLAIM_RE = re.compile(r"(?<![0-9])[1-9][0-9]* passed\b", re.ASCII)
+_PYTEST_COLLECTION_CLAIM_RE = re.compile(r"\bcollected [1-9][0-9]* items?\b", re.ASCII)
 SAMPLER_SHA256 = "584ee565e2afa0d8fb3b7845102d1dab5933300f87e70f64acf525404b00b49a"
 PROFILE_FIELDS = {"profile_id", "result", "required_for_functional", "environment_manifest_digest", "evidence_digest", "reason"}
 INDEX_FIELDS = {"schema_version", "profile_id", "os", "arch", "python_version", "source_identity", "runtime_profile_id", "runtime_lock_digest", "files", "evidence_digest", "index_digest"}
@@ -716,6 +727,86 @@ def _verify_gpu_failure(directory: Path, toolchain: Mapping[str, Any], validatio
         _fail("GPU OOM capture/replay identity differs from report")
 
 
+def _verify_pytest_transcript(text: str, junit: Path) -> dict[str, int]:
+    """Cross-check pytest 9.1.1's parent summary and every adapter JUnit subtest.
+
+    Pytest's terminal collection and passing summary count parent items, while
+    the adapter emits each executed subtest as an additional JUnit testcase.
+    Child skips/xfails are deliberately unsupported and fail closed.
+    """
+    aggregate = parse_junit(junit)
+    xml = ET.parse(junit).getroot()
+    suites = [xml] if xml.tag == "testsuite" else list(xml.findall("testsuite")) if xml.tag == "testsuites" else []
+    cases = [case for suite in suites for case in suite.findall("testcase")]
+    identities: set[tuple[str, str]] = set()
+    parents: set[tuple[str, str]] = set()
+    child_parents: list[tuple[str, str]] = []
+    sequences: list[int] = []
+    parent_skipped = 0
+    subtest_skipped = 0
+    for case in cases:
+        classname, name = case.get("classname"), case.get("name")
+        if not classname or not name or (classname, name) in identities:
+            _fail("pytest JUnit testcase identity is missing or duplicated")
+        identities.add((classname, name))
+        match = _SUBTEST_CASE_RE.fullmatch(name)
+        if match is None:
+            if "illm-subtest#" in name:
+                _fail("pytest JUnit subtest identity is malformed")
+            parents.add((classname, name))
+            parent_skipped += case.find("skipped") is not None
+            continue
+        context_text = match.group("context")
+        try:
+            context = json.loads(context_text)
+        except json.JSONDecodeError:
+            _fail("pytest JUnit subtest context is malformed")
+        if not isinstance(context, dict) or json.dumps(context, ensure_ascii=True, sort_keys=True) != context_text:
+            _fail("pytest JUnit subtest context is not canonical")
+        sequences.append(int(match.group("sequence")))
+        child_parents.append((classname, match.group("parent")))
+        subtest_skipped += case.find("skipped") is not None
+    if len(parents) + len(sequences) != int(aggregate["tests"]):
+        _fail("pytest JUnit parent/subtest accounting differs from strict totals")
+    if sequences != list(range(1, len(sequences) + 1)) or any(parent not in parents for parent in child_parents):
+        _fail("pytest JUnit subtests are reordered, duplicated, or detached from their parent")
+    if subtest_skipped:
+        _fail("pytest qualification does not accept skipped or xfailed subtests")
+    counts = {
+        "parent_tests": len(parents),
+        "parent_passed": len(parents) - parent_skipped,
+        "parent_skipped": parent_skipped,
+        "subtests": len(sequences),
+        "subtests_passed": len(sequences),
+    }
+    lines = text.splitlines()
+    nonempty = [(index, line) for index, line in enumerate(lines) if line.strip()]
+    collection_claims = [
+        (index, line) for index, line in enumerate(lines) if _PYTEST_COLLECTION_CLAIM_RE.search(line)
+    ]
+    passed_claims = [
+        (index, line) for index, line in enumerate(lines) if _PYTEST_PASSED_CLAIM_RE.search(line)
+    ]
+    collection = (
+        _PYTEST_COLLECTION_RE.fullmatch(collection_claims[0][1]) if len(collection_claims) == 1 else None
+    )
+    summary = _PYTEST_SUMMARY_RE.fullmatch(passed_claims[0][1]) if len(passed_claims) == 1 else None
+    if collection is None or summary is None:
+        _fail("pytest transcript lacks one canonical collection line and passing summary")
+    collection_index = collection_claims[0][0]
+    summary_index = passed_claims[0][0]
+    if not nonempty or summary_index != nonempty[-1][0] or collection_index >= summary_index:
+        _fail("pytest transcript collection and final summary are out of order")
+    transcript = {
+        "parent_tests": int(collection.group("tests")),
+        "parent_passed": int(summary.group("passed")),
+        "parent_skipped": int(summary.group("skipped") or 0),
+    }
+    if transcript != {name: counts[name] for name in transcript}:
+        _fail("pytest transcript does not match parent JUnit accounting")
+    return counts
+
+
 def _verify_gate(directory: Path, toolchain: Mapping[str, Any], identity: Mapping[str, str]) -> None:
     report = _object(directory / "gate-report.json")
     _signed(report, "report_digest")
@@ -748,10 +839,7 @@ def _verify_gate(directory: Path, toolchain: Mapping[str, Any], identity: Mappin
 def _verify_phase_output(phase: str, stdout: Path, root: Path, toolchain: Mapping[str, Any]) -> None:
     text = stdout.read_text(encoding="utf-8")
     if phase == "pytest":
-        counts = parse_junit(root / "junit.xml")
-        passed = int(counts["tests"] - counts["skipped"])
-        if str(passed) not in re.findall(r"(?<![0-9])([0-9]+) passed", text):
-            _fail("pytest transcript does not match actual JUnit accounting")
+        _verify_pytest_transcript(text, root / "junit.xml")
         return
     objects: list[dict[str, Any]] = []
     for line in text.splitlines():

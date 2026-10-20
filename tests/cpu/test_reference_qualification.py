@@ -541,7 +541,8 @@ def _write_gate(root: Path) -> Path:
     benchmark = _read(root / "benchmark" / "benchmark-report.json")
     cases = len(CRITICAL_TESTS)
     results: dict[str, Any] = {
-        "bootstrap": toolchain, "quality": _read(root / "quality.json"), "pytest": f"{cases} passed in 1.0s",
+        "bootstrap": toolchain, "quality": _read(root / "quality.json"),
+        "pytest": f"collected {cases} items\n\n================ {cases} passed in 1.00s ================",
         "inspect": {"spec": spec, "weight_manifest": weights},
         "generate": {"capture_manifest_digest": capture["manifest_digest"], "model_spec_id": spec["spec_id"],
                      "sampling_spec_digest": state["sampling_spec_digest"], "actual_seed": 7,
@@ -625,4 +626,35 @@ def test_cleanroom_transcripts_must_bind_actual_artifact_results(cleanroom_seale
     _signed(report_path, report, "report_digest")
     _resign(cleanroom_sealed)
     with pytest.raises(IllmError, match="transcript does not bind"):
+        verify_reference_profile_evidence(cleanroom_sealed)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["wrong-collected", "wrong-passed", "extra-passed-claim", "trailing-output", "early-summary"],
+)
+def test_pytest_transcript_requires_one_exact_parent_summary(cleanroom_sealed: Path, mutation: str) -> None:
+    report_path = cleanroom_sealed / "gate" / "gate-report.json"
+    report = _read(report_path)
+    command = next(item for item in report["commands"] if item["phase"] == "pytest")
+    transcript = report_path.parent / command["stdout_file"]
+    text = transcript.read_text(encoding="utf-8")
+    cases = len(CRITICAL_TESTS)
+    if mutation == "wrong-collected":
+        text = text.replace(f"collected {cases} items", f"collected {cases + 1} items", 1)
+    elif mutation == "wrong-passed":
+        text = text.replace(f"{cases} passed in", f"{cases + 1} passed in", 1)
+    elif mutation == "extra-passed-claim":
+        text += "\nplugin says 999 passed\n"
+    elif mutation == "trailing-output":
+        text += "\ntrailing plugin output\n"
+    else:
+        lines = text.splitlines()
+        summary = lines.pop()
+        text = "\n".join([summary, *lines])
+    transcript.write_text(text, encoding="utf-8")
+    command["stdout_sha256"] = sha256_file(transcript)
+    _signed(report_path, report, "report_digest")
+    _resign(cleanroom_sealed)
+    with pytest.raises(IllmError, match="pytest transcript"):
         verify_reference_profile_evidence(cleanroom_sealed)

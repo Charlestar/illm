@@ -13,6 +13,7 @@ from pathlib import Path
 
 from illm.domain.errors import IllmError
 from illm.qualification import parse_junit
+from illm.reference_qualification import _verify_pytest_transcript
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -27,10 +28,13 @@ class SubtestJUnitTests(unittest.TestCase):
         shutil.copyfile(ROOT / "tests" / "conftest.py", self.directory / "conftest.py")
         self.addCleanup(self.temporary.cleanup)
 
-    def _run(self, source: str, *, junit: bool = True) -> subprocess.CompletedProcess[str]:
+    def _run(self, source: str, *, junit: bool = True, quiet: bool = True) -> subprocess.CompletedProcess[str]:
         path = self.directory / "test_vectors.py"
         path.write_text(source, encoding="utf-8")
-        command = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", str(path)]
+        command = [sys.executable, "-m", "pytest"]
+        if quiet:
+            command.append("-q")
+        command.extend(["-p", "no:cacheprovider", str(path)])
         if junit:
             command.extend(["--junitxml", str(self.directory / "junit.xml")])
         environment = dict(os.environ, PYTEST_DISABLE_PLUGIN_AUTOLOAD="1")
@@ -76,8 +80,9 @@ class Vectors(unittest.TestCase):
         for value in (1, -1, 2):
             with self.subTest(value=value):
                 self.assertGreater(value, 0, "actual-vector-failure")
-''')
+''', quiet=False)
         self.assertEqual(process.returncode, 1, process.stdout + process.stderr)
+        self.assertRegex(process.stdout, r"(?m)^=+ 1 failed, 1 passed in [0-9.]+s =+$")
         suite, cases = self._suite()
         self.assertEqual(len(cases), 4)
         self.assertGreater(int(suite.attrib["failures"]), 0)
@@ -127,6 +132,51 @@ class Vectors(unittest.TestCase):
         _, cases = self._suite()
         self.assertEqual(len(cases), 3)
         self.assertEqual(parse_junit(self.directory / "junit.xml")["tests"], 3)
+
+    def test_gate_summary_cross_checks_parent_and_subtest_counts(self) -> None:
+        process = self._run('''import unittest
+import pytest
+class Vectors(unittest.TestCase):
+    def test_vectors(self):
+        for value in (1, 1, 2):
+            with self.subTest("real vector", value=value):
+                self.assertGreater(value, 0)
+def test_ordinary():
+    assert True
+@pytest.mark.skip(reason="parent-only-skip")
+def test_parent_skip():
+    assert False
+''', quiet=False)
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        counts = _verify_pytest_transcript(process.stdout, self.directory / "junit.xml")
+        self.assertEqual(counts, {"parent_tests": 3, "parent_passed": 2, "parent_skipped": 1,
+                                  "subtests": 3, "subtests_passed": 3})
+        with self.assertRaisesRegex(IllmError, "pytest transcript"):
+            _verify_pytest_transcript(process.stdout + "\nplugin says 999 passed\n", self.directory / "junit.xml")
+
+        tree = ET.parse(self.directory / "junit.xml")
+        suite = tree.getroot().find("testsuite")
+        assert suite is not None
+        subtest = next(case for case in suite.findall("testcase") if "illm-subtest#" in case.attrib["name"])
+        subtest.set("name", subtest.attrib["name"].replace("illm-subtest#1:", "illm-subtest#9:", 1))
+        tampered = self.directory / "tampered-junit.xml"
+        tree.write(tampered, encoding="utf-8")
+        with self.assertRaisesRegex(IllmError, "reordered, duplicated, or detached"):
+            _verify_pytest_transcript(process.stdout, tampered)
+
+    def test_skipped_subtest_is_visible_in_junit_and_fails_closed(self) -> None:
+        process = self._run('''import pytest
+def test_vectors(subtests):
+    with subtests.test("skipped child", value=1):
+        pytest.skip("actual-child-skip")
+    with subtests.test("passing child", value=2):
+        assert True
+''', quiet=False)
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        self.assertRegex(process.stdout, r"(?m)^=+ 1 passed in [0-9.]+s =+$")
+        self.assertEqual(parse_junit(self.directory / "junit.xml")["skipped"], 1)
+        with self.assertRaisesRegex(IllmError, "skipped or xfailed subtests"):
+            _verify_pytest_transcript(process.stdout, self.directory / "junit.xml")
 
     def test_ordinary_parent_failure_remains_a_failure(self) -> None:
         process = self._run('''import unittest
