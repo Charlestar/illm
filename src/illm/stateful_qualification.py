@@ -115,6 +115,8 @@ def _check_tree(root: Path) -> None:
     for path in root.rglob("*"):
         if path.is_symlink() or not path.resolve().is_relative_to(resolved):
             _fail("V0.2 qualification forbids links and escaped paths")
+        if not path.is_dir() and not path.is_file():
+            _fail("V0.2 qualification forbids nonregular artifacts")
         if path.is_dir() and not any(path.iterdir()):
             _fail("V0.2 qualification forbids unreferenced empty directories")
 
@@ -138,6 +140,8 @@ def _check_gate_tree(root: Path) -> None:
             continue
         if path.is_symlink() or not path.resolve().is_relative_to(resolved):
             _fail("V0.2 qualification forbids links and escaped paths")
+        if not path.is_dir() and not path.is_file():
+            _fail("V0.2 qualification forbids nonregular artifacts")
         if path.is_dir():
             if not any(path.iterdir()):
                 _fail("V0.2 qualification forbids unreferenced empty directories")
@@ -429,6 +433,77 @@ def _json_objects(text: str) -> list[dict[str, Any]]:
     return values
 
 
+def _single_producer_result(text: str) -> dict[str, Any]:
+    """Parse the one JSON object emitted by a stateful evidence producer.
+
+    The producer CLIs intentionally print one canonical summary object.  Keep
+    this stricter than the JSONL parser used by ``illm run``: accepting a
+    convenient object from among unrelated stdout would let a transcript bind
+    something other than the command's declared result.
+    """
+
+    lines = [line for line in text.splitlines() if line.strip()]
+    if len(lines) != 1:
+        _fail("V0.2 evidence producer stdout must contain exactly one JSON object")
+
+    def unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                _fail("V0.2 evidence producer stdout contains a duplicate JSON field")
+            result[key] = value
+        return result
+
+    try:
+        value = json.loads(
+            lines[0],
+            object_pairs_hook=unique,
+            parse_constant=lambda _: _fail("V0.2 evidence producer stdout contains a nonfinite value"),
+        )
+    except ValueError as exc:
+        raise IllmError(ErrorCode.INVALID_ARGUMENT, "V0.2 evidence producer stdout is not exact JSON") from exc
+    if not isinstance(value, dict):
+        _fail("V0.2 evidence producer stdout must be a JSON object")
+    return cast(dict[str, Any], value)
+
+
+def _producer_output_argument(argv: Sequence[str]) -> str:
+    positions = [index for index, token in enumerate(argv) if token == "--output"]
+    if len(positions) != 1 or positions[0] + 1 >= len(argv):
+        _fail("V0.2 evidence producer argv must bind one output")
+    return argv[positions[0] + 1]
+
+
+def _producer_stdout_matches(
+    text: str,
+    phase: str,
+    report: Mapping[str, Any],
+    argv: Sequence[str],
+) -> bool:
+    """Bind exact producer summary schema (or an exact full verified report)."""
+
+    result = _single_producer_result(text)
+    output = _producer_output_argument(argv)
+    if phase.startswith("stateful-"):
+        summary = {
+            "status": report["status"],
+            "scope": report["scope"],
+            "report_digest": report["report_digest"],
+            "formal_evidence_eligible": report["formal_evidence_eligible"],
+            "output": output,
+        }
+    elif phase == "exercise" or phase.startswith("benchmark-"):
+        summary = {
+            "status": report["status"],
+            "report_digest": report["report_digest"],
+            "development_no_manifest": report["development_no_manifest"],
+            "output": output,
+        }
+    else:
+        _fail("V0.2 producer stdout matcher received a non-producer phase")
+    return _same(result, report) or _same(result, summary)
+
+
 def _cancel_capture(root: Path) -> Path:
     captures = _object(root / "exercise" / "raw" / "captures.json")
     records = captures.get("records")
@@ -467,6 +542,7 @@ def _verify_gate_phase_output(
     root: Path,
     toolchain: Mapping[str, Any],
     components: Mapping[str, Any],
+    argv: Sequence[str],
 ) -> None:
     try:
         text = stdout.read_text(encoding="utf-8")
@@ -480,9 +556,9 @@ def _verify_gate_phase_output(
         _fail("V0.2 gate phase lacks its structured command result")
     result = objects[-1]
     if phase == "bootstrap":
-        valid = result == toolchain
+        valid = _same(result, toolchain)
     elif phase == "quality":
-        valid = result == _object(root / "quality.json")
+        valid = _same(result, _object(root / "quality.json"))
     elif phase == "verify":
         valid = result.get("status") == "pass" and result.get("device") == "cpu"
     elif phase == "run":
@@ -490,18 +566,20 @@ def _verify_gate_phase_output(
         valid = True
     elif phase in {"replay-trace", "inspect-request"}:
         story = StreamingCaptureBundle.open(root / "demo-capture").request_story("req-0001")
-        valid = result == story
+        valid = _same(result, story)
     elif phase == "stateful-full":
-        valid = result == components["stateful"]["tiny-full"]
+        valid = _producer_stdout_matches(text, phase, components["stateful"]["tiny-full"], argv)
     elif phase in {"stateful-bf16", "stateful-fp16"}:
-        valid = result == components["stateful"][phase.removeprefix("stateful-")]
+        valid = _producer_stdout_matches(
+            text, phase, components["stateful"][phase.removeprefix("stateful-")], argv,
+        )
     elif phase == "exercise":
-        valid = result == components["exercise"]
+        valid = _producer_stdout_matches(text, phase, components["exercise"], argv)
     elif phase in {"learning-build", "learning-verify"}:
-        valid = result == components["learning"]
+        valid = _same(result, components["learning"])
     elif phase.startswith("benchmark-"):
         name = phase.removeprefix("benchmark-")
-        valid = result == components["benchmarks"][name]
+        valid = _producer_stdout_matches(text, phase, components["benchmarks"][name], argv)
     else:
         valid = False
     if not valid:
@@ -587,7 +665,7 @@ def _verify_gate(
                 _fail("V0.2 gate transcript link/checksum is invalid")
             inventory.add(link)
         _verify_gate_phase_output(expected_phase, directory / cast(str, command["stdout_file"]), root=directory.parent,
-                                  toolchain=toolchain, components=components)
+                                  toolchain=toolchain, components=components, argv=string_argv)
     if set(_inventory(directory)) != inventory:
         _fail("V0.2 gate transcript inventory is not exact")
 

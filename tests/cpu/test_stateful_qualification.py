@@ -512,6 +512,33 @@ def test_gate_copy_never_copies_or_hashes_pytest_scratch(tmp_path: Path) -> None
     assert "pytest-temp" not in _inventory(destination)
 
 
+def test_quality_transcript_cannot_substitute_bool_for_numeric_zero(tmp_path: Path) -> None:
+    _write(tmp_path / "quality.json", {"status": "pass", "error_count": 0})
+    stdout = tmp_path / "stdout.txt"
+    _write(stdout, {"status": "pass", "error_count": False})
+    with pytest.raises(IllmError, match="does not bind"):
+        qualification._verify_gate_phase_output("quality", stdout, tmp_path, {}, {}, argv=[])
+
+
+def test_qualification_trees_reject_unhashed_nonregular_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gate = tmp_path / "gate"
+    entry = gate / "logs" / "unhashed-nonregular"
+    entry.parent.mkdir(parents=True)
+    entry.write_bytes(b"unit stand-in\n")
+    original_is_file = Path.is_file
+
+    def stand_in(path: Path) -> bool:
+        return False if path == entry else original_is_file(path)
+
+    monkeypatch.setattr(Path, "is_file", stand_in)
+    with pytest.raises(IllmError, match="nonregular"):
+        qualification._check_tree(gate)
+    with pytest.raises(IllmError, match="nonregular"):
+        qualification._check_gate_tree(gate)
+
+
 def test_gate_phase_order_and_transcript_hashes_are_not_labels_only(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -593,6 +620,145 @@ def test_sealer_rejects_unknown_or_nonexact_gate_before_live_claim(tmp_path: Pat
             profile_id="state-machine-cpu-v1", gate_root=gate, output=tmp_path / "never",
         )
     assert not (tmp_path / "never").exists()
+
+
+@pytest.mark.parametrize(
+    ("phase", "report", "component_key"),
+    [
+        (
+            "stateful-full",
+            {
+                "status": "pass",
+                "scope": "full",
+                "report_digest": "a" * 64,
+                "formal_evidence_eligible": True,
+                "complete_report_field": "stateful-proof",
+            },
+            "tiny-full",
+        ),
+        (
+            "stateful-bf16",
+            {
+                "status": "pass",
+                "scope": "real-smoke",
+                "report_digest": "b" * 64,
+                "formal_evidence_eligible": True,
+                "complete_report_field": "bf16-proof",
+            },
+            "bf16",
+        ),
+        (
+            "exercise",
+            {
+                "status": "pass",
+                "report_digest": "c" * 64,
+                "development_no_manifest": False,
+                "complete_report_field": "lifecycle-proof",
+            },
+            "exercise",
+        ),
+        (
+            "benchmark-fp16-heldout",
+            {
+                "status": "pass",
+                "report_digest": "d" * 64,
+                "development_no_manifest": False,
+                "complete_report_field": "benchmark-proof",
+            },
+            "fp16-heldout",
+        ),
+    ],
+)
+def test_gate_accepts_exact_real_producer_summary_or_complete_report(
+    tmp_path: Path,
+    phase: str,
+    report: dict[str, Any],
+    component_key: str,
+) -> None:
+    """Mirror the final JSON objects printed by the three producer CLIs."""
+
+    output = f"/author/gate/{phase}"
+    argv = ["python", "producer.py", "--output", output]
+    components: dict[str, Any] = {
+        "stateful": {component_key: report},
+        "exercise": report,
+        "benchmarks": {component_key: report},
+    }
+    if phase.startswith("stateful-"):
+        summary = {
+            "status": report["status"],
+            "scope": report["scope"],
+            "report_digest": report["report_digest"],
+            "formal_evidence_eligible": report["formal_evidence_eligible"],
+            "output": output,
+        }
+    else:
+        summary = {
+            "status": report["status"],
+            "report_digest": report["report_digest"],
+            "development_no_manifest": report["development_no_manifest"],
+            "output": output,
+        }
+    stdout = tmp_path / "stdout.txt"
+    for value in (summary, report):
+        stdout.write_bytes(canonical_json_bytes(value) + b"\n")
+        qualification._verify_gate_phase_output(
+            phase,
+            stdout,
+            root=tmp_path,
+            toolchain={},
+            components=components,
+            argv=argv,
+        )
+
+
+@pytest.mark.parametrize("mutation", ["missing", "extra", "wrong_output", "bool_as_int", "early_object", "duplicate"])
+def test_gate_rejects_tampered_or_noncanonical_producer_summary(tmp_path: Path, mutation: str) -> None:
+    report: dict[str, Any] = {
+        "status": "pass",
+        "scope": "full",
+        "report_digest": "a" * 64,
+        "formal_evidence_eligible": True,
+        "complete_report_field": "stateful-proof",
+    }
+    output = "/author/gate/stateful-full"
+    summary: dict[str, Any] = {
+        "status": "pass",
+        "scope": "full",
+        "report_digest": "a" * 64,
+        "formal_evidence_eligible": True,
+        "output": output,
+    }
+    if mutation == "missing":
+        summary.pop("scope")
+    elif mutation == "extra":
+        summary["unverified_claim"] = "pass"
+    elif mutation == "wrong_output":
+        summary["output"] = "/author/gate/different-artifact"
+    elif mutation == "bool_as_int":
+        summary["formal_evidence_eligible"] = 1
+    stdout = tmp_path / "stdout.txt"
+    if mutation == "early_object":
+        stdout.write_text(json.dumps({"unrelated": True}) + "\n" + json.dumps(summary) + "\n", encoding="utf-8")
+    elif mutation == "duplicate":
+        stdout.write_text(
+            '{"status":"fail","status":"pass","scope":"full","report_digest":"'
+            + "a" * 64
+            + f'","formal_evidence_eligible":true,"output":"{output}"}}\n',
+            encoding="utf-8",
+        )
+    else:
+        stdout.write_bytes(canonical_json_bytes(summary) + b"\n")
+    components = {"stateful": {"tiny-full": report}}
+    with pytest.raises(IllmError):
+        qualification._verify_gate_phase_output(
+            "stateful-full",
+            stdout,
+            root=tmp_path,
+            toolchain={},
+            components=components,
+            argv=["python", "producer.py", "--output", output],
+        )
 
 
 def test_portable_import_does_not_load_torch_or_project_scripts() -> None:
