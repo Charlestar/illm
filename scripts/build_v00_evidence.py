@@ -2,19 +2,19 @@ from __future__ import annotations
 
 import argparse
 import json
-import platform
 import shutil
 import time
 import tracemalloc
-import xml.etree.ElementTree as ET
 from pathlib import Path
+from threading import Event
 from typing import Any, Sequence
 
 from illm.canonical import canonical_json_bytes, sha256_file, sha256_json
 from illm.domain.events import DomainEvent, EventKind
-from illm.domain.state import ToyState
 from illm.observability import BoundedMemorySink, EventBus
+from illm.qualification import parse_junit
 from illm.release import verify_release_manifest, write_verified_release_state
+from illm.replay import ToyReplayReducer
 from illm.scheduler import build_plan
 
 
@@ -26,55 +26,119 @@ def _write_json(path: Path, value: Any) -> None:
 
 
 def _parse_junit(path: Path) -> dict[str, Any]:
-    root = ET.parse(path).getroot()
-    suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
     return {
         "schema_version": 0,
-        "tests": sum(int(suite.attrib.get("tests", 0)) for suite in suites),
-        "failures": sum(int(suite.attrib.get("failures", 0)) for suite in suites),
-        "errors": sum(int(suite.attrib.get("errors", 0)) for suite in suites),
-        "skipped": sum(int(suite.attrib.get("skipped", 0)) for suite in suites),
-        "duration_s": sum(float(suite.attrib.get("time", 0)) for suite in suites),
+        **parse_junit(path),
         "junit_sha256": sha256_file(path),
     }
 
 
 def _benchmark_sink() -> dict[str, Any]:
+    entered = Event()
+    release = Event()
+    reducer = ToyReplayReducer()
+    required = BoundedMemorySink(capacity=3)
+
+    class RequiredFacts:
+        delivered = 0
+
+        def emit(self, event: DomainEvent) -> None:
+            required.emit(event)
+            for recorded in required.drain():
+                reducer.apply(recorded)
+                self.delivered += 1
+
     class StalledExporter:
         def emit(self, event: DomainEvent) -> None:
             del event
-            raise RuntimeError("synthetic exporter stall")
+            entered.set()
+            release.wait()
 
-    sink = BoundedMemorySink(capacity=3)
-    bus = EventBus((sink,), (StalledExporter(),))
-    state = ToyState()
+    facts = RequiredFacts()
     tracemalloc.start()
     before_current, _ = tracemalloc.get_traced_memory()
-    started = time.perf_counter_ns()
-    for seq in range(10_000):
-        build_plan(state, seq)
-        bus.emit(DomainEvent("benchmark", seq, seq + 1, EventKind.DIAGNOSTIC, {"step_id": seq}))
-    duration_ns = time.perf_counter_ns() - started
-    after_current, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
-    retained = len(sink.drain())
-    return {
+    bus = EventBus((facts,), (StalledExporter(),), best_effort_capacity=3)
+    sequence = 0
+    completed_steps = 0
+
+    def emit(kind: EventKind, payload: dict[str, object]) -> None:
+        nonlocal sequence
+        bus.emit(DomainEvent("benchmark", sequence, time.monotonic_ns(), kind, payload))
+        sequence += 1
+
+    try:
+        emit(EventKind.DIAGNOSTIC, {})
+        if not entered.wait(2):
+            raise RuntimeError("exporter did not enter blocking call")
+        started = time.perf_counter_ns()
+        for step_id in range(10_000):
+            emit(EventKind.SCHEDULER_STEP_STARTED, {"step_id": step_id})
+            if step_id == 0:
+                emit(EventKind.REQUEST_ARRIVED, {"request_id": "benchmark-request", "arrival_step": 0})
+            plan = build_plan(reducer.state, step_id)
+            for request_id in plan.selected:
+                emit(EventKind.REQUEST_SELECTED, {
+                    "request_id": request_id, "step_id": step_id, "reason_code": "OLDEST_FIRST",
+                })
+            for deferred in plan.deferred:
+                emit(EventKind.REQUEST_DEFERRED, {
+                    "request_id": deferred.request_id, "step_id": step_id,
+                    "reason_code": deferred.reason_code,
+                })
+            for request_id in plan.selected:
+                emit(EventKind.REQUEST_COMPLETED, {
+                    "request_id": request_id, "step_id": step_id, "terminal": "FINISHED",
+                })
+            emit(EventKind.SCHEDULER_STEP_COMPLETED, {
+                "step_id": step_id, "selected": list(plan.selected),
+                "deferred": [item.request_id for item in plan.deferred],
+            })
+            completed_steps += 1
+        state = reducer.finish()
+        producer_completed_while_blocked = not release.is_set() and entered.is_set()
+        duration_ns = time.perf_counter_ns() - started
+        after_current, peak = tracemalloc.get_traced_memory()
+        closed_while_blocked = bus.close(timeout=0.05)
+    finally:
+        release.set()
+        shutdown_after_release = bus.close(timeout=2)
+        tracemalloc.stop()
+    memory_growth = max(0, after_current - before_current)
+    memory_limit = 1_048_576
+    report = {
         "schema_version": 0,
-        "offered_events": 10_000,
-        "completed_scheduler_steps": 10_000,
-        "retained_events": retained,
-        "diagnostic_drop_count": sink.dropped_diagnostic_count,
-        "critical_event_drop_count": sink.critical_drop_count,
+        "offered_events": sequence,
+        "required_delivered_events": facts.delivered,
+        "completed_scheduler_steps": completed_steps,
+        "final_state_digest": state.digest,
+        "critical_event_drop_count": required.critical_drop_count,
+        "exporter_was_blocked": entered.is_set(),
+        "producer_completed_while_exporter_blocked": producer_completed_while_blocked,
+        "exporter_queue_capacity": bus.best_effort_capacity,
+        "exporter_queue_high_watermark": bus.exporter_queue_high_watermark,
+        "exporter_in_flight_limit": 1,
+        "exporter_drop_count": bus.exporter_drop_count,
+        "exporter_critical_drop_count": bus.exporter_critical_drop_count,
         "exporter_error_count": bus.exporter_error_count,
         "duration_s": duration_ns / 1_000_000_000,
-        "traced_current_growth_bytes": max(0, after_current - before_current),
+        "traced_current_growth_bytes": memory_growth,
         "traced_peak_bytes": peak,
+        "memory_growth_limit_bytes": memory_limit,
+        "memory_bound_pass": memory_growth <= memory_limit,
+        "close_while_blocked_returned": closed_while_blocked,
+        "close_timeout_s": 0.05,
+        "shutdown_after_release": shutdown_after_release,
         "forward_progress": (
-            retained == 3
-            and sink.dropped_diagnostic_count == 9_997
-            and bus.exporter_error_count == 10_000
+            completed_steps == 10_000 and producer_completed_while_blocked
+            and facts.delivered == sequence and required.critical_drop_count == 0
+            and bus.exporter_queue_high_watermark <= bus.best_effort_capacity
+            and memory_growth <= memory_limit and not closed_while_blocked
+            and shutdown_after_release
         ),
     }
+    if not report["forward_progress"]:
+        raise RuntimeError("blocking-exporter experiment failed its forward-progress/boundedness gate")
+    return report
 
 
 def _profile(
@@ -101,6 +165,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--capture", type=Path, required=True)
     parser.add_argument("--junit", type=Path, required=True)
     parser.add_argument("--commands", type=Path, required=True)
+    parser.add_argument("--transcripts", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     return parser
 
@@ -146,17 +211,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         encoding="utf-8",
     )
     (output / "release-notes.md").write_text(
-        "# iLLM v0.0.0 release candidate\n\nImplements the offline bootstrap lab, deterministic toy scheduler, "
-        "canonical capture, transactional R0/R1 replay, sealed platform qualification evidence, and fail-closed release verification.\n",
+        "# iLLM v0.0.0 Bootstrap Lab\n\nImplements the offline bootstrap lab, deterministic toy scheduler, "
+        "canonical capture, transactional R0/R1 replay, bounded asynchronous best-effort exporters, "
+        "sealed platform evidence, rollback rehearsal, and full release-bundle verification.\n\n"
+        "Learning checkpoint: inspect each scheduler step, replay facts, reproduce state, then corrupt a copied capture to observe rejection. "
+        "The immutable v0.0.0 tag preserves this CPU-only foundation before real model execution is added.\n",
         encoding="utf-8",
     )
     terminal_dir = output / "screenshots" / "terminal"
     terminal_dir.mkdir(parents=True, exist_ok=True)
     for transcript in args.commands.parent.glob("*.txt"):
         shutil.copy2(transcript, terminal_dir / transcript.name)
+    if args.transcripts:
+        for transcript in args.transcripts.glob("*.txt"):
+            shutil.copy2(transcript, terminal_dir / transcript.name)
+        if (args.transcripts / "execution.json").is_file():
+            shutil.copy2(args.transcripts / "execution.json", terminal_dir / "execution.json")
 
     test_digest = sha256_json(test_report)
-    os_name = platform.system()
     profiles = [
         _profile(
             "cpu-clean-room-v1",
@@ -167,17 +239,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         _profile(
             "windows-bootstrap-v1",
-            "pass" if os_name == "Windows" else "not_run_resource_unavailable",
-            environment_digest=toolchain_digest if os_name == "Windows" else None,
-            evidence_digest=sha256_json({"toolchain": toolchain_digest, "os": os_name}) if os_name == "Windows" else None,
-            reason=None if os_name == "Windows" else "windows_runner_unavailable",
+            "not_run",
+            environment_digest=None,
+            evidence_digest=None,
+            reason="sealed_platform_evidence_not_merged",
         ),
         _profile(
             "linux-bootstrap-v1",
-            "pass" if os_name == "Linux" else "not_run_resource_unavailable",
-            environment_digest=toolchain_digest if os_name == "Linux" else None,
-            evidence_digest=sha256_json({"toolchain": toolchain_digest, "os": os_name}) if os_name == "Linux" else None,
-            reason=None if os_name == "Linux" else "linux_runner_unavailable",
+            "not_run",
+            environment_digest=None,
+            evidence_digest=None,
+            reason="sealed_platform_evidence_not_merged",
         ),
     ]
     release_manifest: dict[str, Any] = {

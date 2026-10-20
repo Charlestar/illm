@@ -9,7 +9,7 @@ from typing import NoReturn, Sequence
 from illm.canonical import canonical_json_text
 from illm.capture import CaptureBundle
 from illm.domain.errors import ErrorCode, IllmError
-from illm.release import verify_release_manifest, write_verified_release_state
+from illm.release import verify_release_bundle, write_verified_release_state
 from illm.replay import replay_events
 from illm.toy import run_toy_scheduler
 
@@ -126,7 +126,7 @@ def _replay(args: argparse.Namespace) -> int:
 
 
 def _release_verify(args: argparse.Namespace) -> int:
-    result = verify_release_manifest(args.manifest)
+    result = verify_release_bundle(args.manifest)
     if args.output:
         write_verified_release_state(result, args.output)
     print(canonical_json_text(result))

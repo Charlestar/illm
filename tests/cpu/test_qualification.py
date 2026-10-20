@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import shutil
 from pathlib import Path
 
 import pytest
@@ -136,3 +137,65 @@ def test_verified_profile_can_be_merged_without_overclaiming_linux(tmp_path: Pat
         if profile["profile_id"] == "windows-bootstrap-v1"
     )
     assert windows["evidence_digest"] == created["evidence_digest"]
+
+
+def test_deep_checkout_paths_support_sealing_verification_and_merge(tmp_path: Path) -> None:
+    inputs = tmp_path / "inputs"
+    inputs.mkdir()
+    junit, quality, capture = _inputs(inputs)
+    original_manifest = _manifest_path()
+    toolchain = json.loads(original_manifest.read_text(encoding="utf-8"))
+    deep = tmp_path / ("nested-" + "a" * 70) / ("checkout-" + "b" * 70)
+
+    def fixture_path(path: Path) -> Path:
+        value = str(path.resolve())
+        return Path("\\\\?\\" + value) if os.name == "nt" else path
+
+    # Arrange files through the long-path API, then exercise public APIs with
+    # ordinary paths as callers do. The sealed capture files exceed MAX_PATH.
+    shutil.copytree(inputs, fixture_path(deep / "inputs"))
+    long_manifest = deep / "inputs" / "toolchain.json"
+    fixture_path(long_manifest).write_bytes(original_manifest.read_bytes())
+    evidence = deep / "evidence"
+    created = create_profile_evidence(
+        toolchain_manifest=long_manifest,
+        junit=deep / "inputs" / junit.name,
+        quality=deep / "inputs" / quality.name,
+        capture=deep / "inputs" / capture.name,
+        output=evidence,
+    )
+    verified, index = verify_profile_evidence(evidence)
+    assert verified == created
+    assert index["source_identity"]["project_root_digest"] == toolchain["project_root_digest"]
+    release_dir = deep / "release"
+    fixture_path(release_dir).mkdir()
+    manifest = {
+        "schema_version": 0,
+        "spec_status": "implemented",
+        "release_stage": "release_candidate",
+        "qualification_tier": "learning_complete",
+        "qualification_profiles": [
+            _profile("cpu-clean-room-v1", "pass"),
+            _profile("windows-bootstrap-v1", "not_run_resource_unavailable"),
+            _profile("linux-bootstrap-v1", "not_run_resource_unavailable"),
+        ],
+        "performance_outcome": "not_applicable",
+        "lts_state": "not_applicable",
+        "toolchain_manifest_digest": toolchain["manifest_digest"],
+        "capture_manifest_digest": "c" * 64,
+        "test_report_digest": "d" * 64,
+        "event_stall_digest": "e" * 64,
+    }
+    manifest["manifest_digest"] = sha256_json(manifest)
+    fixture_path(release_dir / "manifest.json").write_bytes(canonical_json_bytes(manifest) + b"\n")
+    merged = merge_profile_evidence(
+        release_dir=release_dir,
+        base_toolchain_manifest=long_manifest,
+        evidence_roots=[evidence],
+    )
+    assert merged["recomputed_qualification_tier"] == "learning_complete"
+    imported = release_dir / "qualification" / "profiles" / created["profile_id"] / "evidence" / created["evidence_digest"]
+    assert len(str(imported / "capture" / "capture-manifest.json")) > 260
+    assert verify_profile_evidence(imported)[0] == created
+    imported_toolchain = json.loads(fixture_path(imported / "toolchain.json").read_text(encoding="utf-8"))
+    assert imported_toolchain == toolchain

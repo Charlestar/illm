@@ -1,26 +1,19 @@
-# V0.0 local qualification commands
-# SYSTEM_PYTHON is a supported Windows Python 3.11+ interpreter, not part of project state.
-# WSL_PROJECT_ROOT is this checkout's /mnt/<drive>/... path inside Ubuntu-24.04.
+# V0.0 release commands. Run from the checked-out repository root.
+# SYSTEM_PYTHON: Windows Python >=3.11. WSL_PROJECT_ROOT: this checkout's /mnt/... path.
+# Every --output directory below must be new; use a new suffix for a repeated gate.
 
-SYSTEM_PYTHON scripts/bootstrap.py --profile dev --locked --write-manifest out/v0.0/toolchain.json --write-manifest-digest out/v0.0/toolchain.sha256
-SYSTEM_PYTHON scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python -m pytest tests/cpu --junitxml out/v0.0/junit.xml
-SYSTEM_PYTHON scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python scripts/check_quality.py --output out/v0.0/quality.json
-SYSTEM_PYTHON scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python -m illm demo toy-scheduler --seed 7 --steps 20 --capture out/v0.0
-SYSTEM_PYTHON scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python -m illm replay out/v0.0 --mode trace
-SYSTEM_PYTHON scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python -m illm replay out/v0.0 --mode state --assert-state-digest
-SYSTEM_PYTHON scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python scripts/qualify_v00.py --toolchain-manifest out/v0.0/toolchain.json --junit out/v0.0/junit.xml --quality out/v0.0/quality.json --capture out/v0.0 --output out/v0.0/qualification/windows-bootstrap-v1
-SYSTEM_PYTHON scripts/bootstrap.py --profile rollback-rehearsal --locked --write-manifest out/v0.0/rollback-toolchain.json --write-manifest-digest out/v0.0/rollback-toolchain.sha256
-SYSTEM_PYTHON scripts/in_env.py --manifest out/v0.0/rollback-toolchain.json --expected-manifest-digest-file out/v0.0/rollback-toolchain.sha256 -- python scripts/rollback_v00.py --toolchain-manifest out/v0.0/rollback-toolchain.json --evidence-dir release/v0.0.0/rollback
-SYSTEM_PYTHON scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python scripts/build_v00_evidence.py --toolchain-manifest out/v0.0/toolchain.json --capture out/v0.0 --junit out/v0.0/junit.xml --commands evidence/v0.0/commands.txt --output release/v0.0.0
+SYSTEM_PYTHON scripts/run_v00_gate.py --profile v00-release-windows --output out/v00-release-windows --rollback
+wsl.exe -d Ubuntu-24.04 --cd WSL_PROJECT_ROOT -- /usr/bin/python3 scripts/run_v00_gate.py --profile v00-release-linux --output out/v00-release-linux
 
-wsl.exe -d Ubuntu-24.04 --cd WSL_PROJECT_ROOT -- /usr/bin/python3 scripts/bootstrap.py --profile ci-linux-wsl --locked --write-manifest out/v0.0-linux/toolchain.json --write-manifest-digest out/v0.0-linux/toolchain.sha256
-wsl.exe -d Ubuntu-24.04 --cd WSL_PROJECT_ROOT -- /usr/bin/python3 scripts/in_env.py --manifest out/v0.0-linux/toolchain.json --expected-manifest-digest-file out/v0.0-linux/toolchain.sha256 -- python scripts/check_quality.py --output out/v0.0-linux/quality.json
-wsl.exe -d Ubuntu-24.04 --cd WSL_PROJECT_ROOT -- /usr/bin/python3 scripts/in_env.py --manifest out/v0.0-linux/toolchain.json --expected-manifest-digest-file out/v0.0-linux/toolchain.sha256 -- python -m pytest -p no:cacheprovider tests/cpu --junitxml out/v0.0-linux/junit.xml
-wsl.exe -d Ubuntu-24.04 --cd WSL_PROJECT_ROOT -- /usr/bin/python3 scripts/in_env.py --manifest out/v0.0-linux/toolchain.json --expected-manifest-digest-file out/v0.0-linux/toolchain.sha256 -- python -m illm demo toy-scheduler --seed 7 --steps 20 --capture out/v0.0-linux
-wsl.exe -d Ubuntu-24.04 --cd WSL_PROJECT_ROOT -- /usr/bin/python3 scripts/in_env.py --manifest out/v0.0-linux/toolchain.json --expected-manifest-digest-file out/v0.0-linux/toolchain.sha256 -- python -m illm replay out/v0.0-linux --mode trace
-wsl.exe -d Ubuntu-24.04 --cd WSL_PROJECT_ROOT -- /usr/bin/python3 scripts/in_env.py --manifest out/v0.0-linux/toolchain.json --expected-manifest-digest-file out/v0.0-linux/toolchain.sha256 -- python -m illm replay out/v0.0-linux --mode state --assert-state-digest
-wsl.exe -d Ubuntu-24.04 --cd WSL_PROJECT_ROOT -- /usr/bin/python3 scripts/in_env.py --manifest out/v0.0-linux/toolchain.json --expected-manifest-digest-file out/v0.0-linux/toolchain.sha256 -- python scripts/qualify_v00.py --toolchain-manifest out/v0.0-linux/toolchain.json --junit out/v0.0-linux/junit.xml --quality out/v0.0-linux/quality.json --capture out/v0.0-linux --output out/v0.0-linux/qualification/linux-bootstrap-v1
+SYSTEM_PYTHON scripts/in_env.py --manifest out/v00-release-windows/toolchain.json --expected-manifest-digest-file out/v00-release-windows/toolchain.sha256 -- python scripts/build_v00_evidence.py --toolchain-manifest out/v00-release-windows/toolchain.json --capture out/v00-release-windows --junit out/v00-release-windows/junit.xml --commands evidence/v0.0/commands.txt --transcripts out/v00-release-windows --output release/v0.0.0
+SYSTEM_PYTHON scripts/in_env.py --manifest out/v00-release-windows/toolchain.json --expected-manifest-digest-file out/v00-release-windows/toolchain.sha256 -- python scripts/merge_v00_qualification.py --release-dir release/v0.0.0 --base-toolchain-manifest out/v00-release-windows/toolchain.json --profile-evidence out/v00-release-windows/qualification
+SYSTEM_PYTHON scripts/in_env.py --manifest out/v00-release-windows/toolchain.json --expected-manifest-digest-file out/v00-release-windows/toolchain.sha256 -- python scripts/merge_v00_qualification.py --release-dir release/v0.0.0 --base-toolchain-manifest out/v00-release-windows/toolchain.json --profile-evidence out/v00-release-linux/qualification
+SYSTEM_PYTHON scripts/in_env.py --manifest out/v00-release-windows/toolchain.json --expected-manifest-digest-file out/v00-release-windows/toolchain.sha256 -- python -m illm release verify release/v0.0.0/manifest.json
+SYSTEM_PYTHON scripts/in_env.py --manifest out/v00-release-windows/toolchain.json --expected-manifest-digest-file out/v00-release-windows/toolchain.sha256 -- python scripts/promote_v00.py
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate_specs.ps1 -RepositoryRoot .
 
-SYSTEM_PYTHON scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python scripts/merge_v00_qualification.py --release-dir release/v0.0.0 --base-toolchain-manifest out/v0.0/toolchain.json --profile-evidence out/v0.0/qualification/windows-bootstrap-v1
-SYSTEM_PYTHON scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python scripts/merge_v00_qualification.py --release-dir release/v0.0.0 --base-toolchain-manifest out/v0.0/toolchain.json --profile-evidence out/v0.0-linux/qualification/linux-bootstrap-v1
-SYSTEM_PYTHON scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python -m illm release verify release/v0.0.0/manifest.json --output release/v0.0.0/qualification/release-state.json
+# After independent CI and archive verification, create an annotated immutable tag.
+# The annotation binds the final release/v0.0.0/manifest.json manifest_digest.
+# git tag -a v0.0.0 -m "V0.0 Bootstrap Lab; manifest SHA256=<verified manifest_digest>"
+# git push origin main
+# git push origin refs/tags/v0.0.0

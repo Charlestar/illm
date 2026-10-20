@@ -27,6 +27,11 @@ jobs:
         run: python scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python -m pytest tests/cpu --junitxml out/v0.0/junit.xml
       - name: Static quality and annotation gate
         run: python scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python scripts/check_quality.py --output out/v0.0/quality.json
+      - name: Version SPEC validation
+        shell: pwsh
+        run: ./scripts/validate_specs.ps1 -RepositoryRoot .
+      - name: Audit the committed historical release bundle
+        run: python scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python -m illm release verify release/v0.0.0/manifest.json
       - name: Toy capture
         run: python scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-digest-file out/v0.0/toolchain.sha256 -- python -m illm demo toy-scheduler --seed 7 --steps 20 --capture out/v0.0
       - name: R0 playback

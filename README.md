@@ -26,13 +26,17 @@ Later version documents are plans, not implemented capabilities.
 
 ## Current qualification
 
-V0.0 is an `implemented` release candidate with local
+V0.0 is the first tagged learning release (`v0.0.0`), with
 `functionally_qualified` evidence: CPU, Windows, and Linux profiles pass. The
 Linux clean-room profile is produced in WSL Ubuntu and merged only after its
 sealed project-root, bootstrap, lock, environment, and evidence digests match
-the Windows-built release candidate. GitHub Actions independently repeats the
+the Windows-built release bundle. GitHub Actions independently repeats the
 Windows/Linux matrix after each push. The quality gate includes offline
 `mypy --strict`, and the runner rechecks the exact locked distribution set
 before importing iLLM. See
 [`docs/implementation/v0.0-status.md`](docs/implementation/v0.0-status.md) and
 the generated [`release/v0.0.0/manifest.json`](release/v0.0.0/manifest.json).
+
+Use the [version learning index](docs/releases/README.md) to check out a release,
+run its demo, and study the change from its predecessor. Each completed version
+receives its own annotated tag; later SPECs stay plans until their gates pass.

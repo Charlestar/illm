@@ -1,0 +1,22 @@
+step arrivals selected deferred reason
+   0 req-0000,req-0001  req-0000   req-0001           BATCH_CAPACITY
+   1 req-0002           req-0001   req-0002           BATCH_CAPACITY
+   2 req-0003           req-0002   req-0003           BATCH_CAPACITY
+   3 req-0004           req-0003   req-0004           BATCH_CAPACITY
+   4 req-0005,req-0006  req-0004   req-0005,req-0006  BATCH_CAPACITY
+   5 req-0007,req-0008  req-0005   req-0006,req-0007,req-0008 BATCH_CAPACITY
+   6 -                  req-0006   req-0007,req-0008  BATCH_CAPACITY
+   7 -                  req-0007   req-0008           BATCH_CAPACITY
+   8 -                  req-0008   -                  -
+   9 -                  -          -                  -
+  10 -                  -          -                  -
+  11 -                  -          -                  -
+  12 -                  -          -                  -
+  13 -                  -          -                  -
+  14 -                  -          -                  -
+  15 -                  -          -                  -
+  16 -                  -          -                  -
+  17 -                  -          -                  -
+  18 -                  -          -                  -
+  19 -                  -          -                  -
+{"capture":"C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows","completed_requests":9,"event_count":79,"final_state_digest":"8678d4d2a8442c7b56830d326fc7874f5473e92357883e7402e38a2545420a55"}

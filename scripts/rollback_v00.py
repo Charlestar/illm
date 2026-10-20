@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
+import shutil
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -67,12 +70,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     }
     evidence_dir.mkdir(parents=True, exist_ok=True)
     _atomic_json(evidence_dir / "manifest.json", report)
-    (evidence_dir / "commands.txt").write_text(
-        "python scripts/in_env.py --manifest out/v0.0/rollback-toolchain.json -- "
-        "python scripts/rollback_v00.py --toolchain-manifest out/v0.0/rollback-toolchain.json "
-        "--evidence-dir release/v0.0.0/rollback\n",
-        encoding="utf-8",
-    )
+    relative_manifest = manifest_path.relative_to(project_root).as_posix()
+    command = ["python", "scripts/in_env.py", "--manifest", relative_manifest,
+               "--", "python", "scripts/rollback_v00.py", "--toolchain-manifest", relative_manifest,
+               "--evidence-dir", "release/v0.0.0/rollback"]
+    rendered = subprocess.list2cmdline(command) if os.name == "nt" else shlex.join(command)
+    (evidence_dir / "commands.txt").write_text(rendered + "\n", encoding="utf-8")
     (evidence_dir / "uninstall.stdout.txt").write_text(process.stdout, encoding="utf-8")
     (evidence_dir / "uninstall.stderr.txt").write_text(process.stderr, encoding="utf-8")
     (evidence_dir / "rollback-report.md").write_text(
@@ -84,6 +87,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"- Result: `{'PASS' if success else 'FAIL'}`\n",
         encoding="utf-8",
     )
+    shutil.copy2(manifest_path, evidence_dir / "toolchain.json")
+    evidence_files = (
+        "manifest.json", "toolchain.json", "commands.txt", "rollback-report.md",
+        "uninstall.stdout.txt", "uninstall.stderr.txt",
+    )
+    _atomic_json(evidence_dir / "checksums.json", {
+        name: hashlib.sha256((evidence_dir / name).read_bytes()).hexdigest()
+        for name in evidence_files
+    })
     sentinel["state"] = "rolled_back"
     sentinel["rollback_evidence"] = str(evidence_dir / "manifest.json")
     _atomic_json(sentinel_path, sentinel)

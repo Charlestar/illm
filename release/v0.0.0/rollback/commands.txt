@@ -1,1 +1,1 @@
-python scripts/in_env.py --manifest out/v0.0/rollback-toolchain.json -- python scripts/rollback_v00.py --toolchain-manifest out/v0.0/rollback-toolchain.json --evidence-dir release/v0.0.0/rollback
+python scripts/in_env.py --manifest out/v00-release-windows/rollback-toolchain.json -- python scripts/rollback_v00.py --toolchain-manifest out/v00-release-windows/rollback-toolchain.json --evidence-dir release/v0.0.0/rollback

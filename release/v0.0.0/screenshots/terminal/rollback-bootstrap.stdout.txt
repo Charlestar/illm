@@ -1,0 +1,34 @@
+Looking in links: c:\Users\iStar\Documents\ChatGPT\illm\vendor\wheels
+Requirement already satisfied: pip==26.2.1 in .\.illm\envs\v00-release-windows-rollback\Lib\site-packages (from -r C:\Users\iStar\Documents\ChatGPT\illm\requirements-bootstrap.lock (line 2)) (26.2.1)
+Processing .\vendor\wheels\packaging-26.3-py3-none-any.whl (from -r C:\Users\iStar\Documents\ChatGPT\illm\requirements-bootstrap.lock (line 4))
+Processing .\vendor\wheels\setuptools-83.0.0-py3-none-any.whl (from -r C:\Users\iStar\Documents\ChatGPT\illm\requirements-bootstrap.lock (line 6))
+Processing .\vendor\wheels\wheel-0.47.0-py3-none-any.whl (from -r C:\Users\iStar\Documents\ChatGPT\illm\requirements-bootstrap.lock (line 8))
+Installing collected packages: setuptools, packaging, wheel
+
+Successfully installed packaging-26.3 setuptools-83.0.0 wheel-0.47.0
+Looking in links: c:\Users\iStar\Documents\ChatGPT\illm\vendor\wheels
+Processing .\vendor\wheels\colorama-0.4.6-py2.py3-none-any.whl (from -r C:\Users\iStar\Documents\ChatGPT\illm\requirements-dev.lock (line 2))
+Processing .\vendor\wheels\iniconfig-2.3.0-py3-none-any.whl (from -r C:\Users\iStar\Documents\ChatGPT\illm\requirements-dev.lock (line 4))
+Processing .\vendor\wheels\mypy-1.18.2-py3-none-any.whl (from -r C:\Users\iStar\Documents\ChatGPT\illm\requirements-dev.lock (line 6))
+Processing .\vendor\wheels\mypy_extensions-1.1.0-py3-none-any.whl (from -r C:\Users\iStar\Documents\ChatGPT\illm\requirements-dev.lock (line 8))
+Processing .\vendor\wheels\pathspec-1.1.1-py3-none-any.whl (from -r C:\Users\iStar\Documents\ChatGPT\illm\requirements-dev.lock (line 10))
+Processing .\vendor\wheels\pluggy-1.6.0-py3-none-any.whl (from -r C:\Users\iStar\Documents\ChatGPT\illm\requirements-dev.lock (line 12))
+Processing .\vendor\wheels\pygments-2.21.0-py3-none-any.whl (from -r C:\Users\iStar\Documents\ChatGPT\illm\requirements-dev.lock (line 14))
+Processing .\vendor\wheels\pytest-9.1.1-py3-none-any.whl (from -r C:\Users\iStar\Documents\ChatGPT\illm\requirements-dev.lock (line 16))
+Processing .\vendor\wheels\typing_extensions-4.16.0-py3-none-any.whl (from -r C:\Users\iStar\Documents\ChatGPT\illm\requirements-dev.lock (line 18))
+Requirement already satisfied: packaging>=22 in .\.illm\envs\v00-release-windows-rollback\Lib\site-packages (from pytest==9.1.1->-r C:\Users\iStar\Documents\ChatGPT\illm\requirements-dev.lock (line 16)) (26.3)
+Installing collected packages: typing_extensions, pygments, pluggy, pathspec, mypy_extensions, iniconfig, colorama, pytest, mypy
+
+Successfully installed colorama-0.4.6 iniconfig-2.3.0 mypy-1.18.2 mypy_extensions-1.1.0 pathspec-1.1.1 pluggy-1.6.0 pygments-2.21.0 pytest-9.1.1 typing_extensions-4.16.0
+Processing .\.
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Building wheels for collected packages: illm
+  Building wheel for illm (pyproject.toml): started
+  Building wheel for illm (pyproject.toml): finished with status 'done'
+  Created wheel for illm: filename=illm-0.0.0-py3-none-any.whl size=30820 sha256=87feb838449a75c1ed6bdf1ebe2bad149c1562a311d9cea7b8c9c45392608230
+  Stored in directory: C:\Users\iStar\AppData\Local\Temp\pip-ephem-wheel-cache-646392k_\wheels\c3\67\e9\1b1652b9ea56461c2efedfb65825efc0c489ba2b3a0e59bc0e
+Successfully built illm
+Installing collected packages: illm
+Successfully installed illm-0.0.0
+{"arch": "AMD64", "bootstrap_digest": "bdd072cd00b8149d942fed2a7310fa717bb755b2b18570c066925202e8e4a399", "entrypoints": {"illm": "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\.illm\\envs\\v00-release-windows-rollback\\Scripts\\illm.exe"}, "environment_id": "64523899-1339-4dda-8795-cfe7b74a5fbb", "environment_root": "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\.illm\\envs\\v00-release-windows-rollback", "finalized": true, "installed_packages": {"colorama": "0.4.6", "illm": "0.0.0", "iniconfig": "2.3.0", "mypy": "1.18.2", "mypy-extensions": "1.1.0", "packaging": "26.3", "pathspec": "1.1.1", "pip": "26.2.1", "pluggy": "1.6.0", "pygments": "2.21.0", "pytest": "9.1.1", "setuptools": "83.0.0", "typing-extensions": "4.16.0", "wheel": "0.47.0"}, "lock_digest": "19489d7dd52ec0f54bbd45b784add2453453523008ab46550dea8bf989cef274", "manifest_digest": "7015d69919ddc4100edac569517ae24feb510bea4decf9cd012d9970076d2ccc", "os": "Windows", "profile": "v00-release-windows-rollback", "project_root": "C:\\Users\\iStar\\Documents\\ChatGPT\\illm", "project_root_digest": "1ed0f463a78ce502efc3d2d25ecd2c5d79e697bb6672ace851ffa4ff76459b29", "python_executable": "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\.illm\\envs\\v00-release-windows-rollback\\Scripts\\python.exe", "python_version": "3.14.7", "schema_version": 0}

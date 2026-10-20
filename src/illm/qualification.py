@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import platform
 import shutil
@@ -56,6 +57,17 @@ INDEX_FIELDS = {
 }
 
 
+def _filesystem_path(path: Path) -> Path:
+    """Use the Windows long-path API without rewriting provenance identities."""
+    resolved = path.resolve()
+    value = str(resolved)
+    if os.name != "nt" or value.startswith("\\\\?\\"):
+        return resolved
+    if value.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + value[2:])
+    return Path("\\\\?\\" + value)
+
+
 def _read_json(path: Path, label: str) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -93,17 +105,31 @@ def parse_junit(path: Path) -> dict[str, int | float]:
         root = ET.parse(path).getroot()
     except (OSError, ET.ParseError) as exc:
         raise IllmError(ErrorCode.INVALID_ARGUMENT, "JUnit report is unreadable") from exc
-    suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+    suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite")) if root.tag == "testsuites" else []
     if not suites:
         raise IllmError(ErrorCode.INVALID_ARGUMENT, "JUnit report contains no test suites")
-    result: dict[str, int | float] = {
-        "tests": sum(int(suite.attrib.get("tests", 0)) for suite in suites),
-        "failures": sum(int(suite.attrib.get("failures", 0)) for suite in suites),
-        "errors": sum(int(suite.attrib.get("errors", 0)) for suite in suites),
-        "skipped": sum(int(suite.attrib.get("skipped", 0)) for suite in suites),
-        "duration_s": sum(float(suite.attrib.get("time", 0)) for suite in suites),
-    }
-    if result["tests"] < 1 or result["failures"] or result["errors"]:
+    result: dict[str, int | float] = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0, "duration_s": 0.0}
+    try:
+        for suite in suites:
+            counts = {field: int(suite.attrib[field]) for field in ("tests", "failures", "errors", "skipped")}
+            duration = float(suite.attrib.get("time", "0"))
+            if any(value < 0 for value in counts.values()) or not math.isfinite(duration) or duration < 0:
+                raise ValueError("invalid JUnit counts or duration")
+            cases = list(suite.findall("testcase"))
+            actual = {
+                "tests": len(cases),
+                "failures": sum(case.find("failure") is not None for case in cases),
+                "errors": sum(case.find("error") is not None for case in cases),
+                "skipped": sum(case.find("skipped") is not None for case in cases),
+            }
+            if counts != actual:
+                raise ValueError("JUnit summary disagrees with testcase facts")
+            for field, count in counts.items():
+                result[field] += count
+            result["duration_s"] += duration
+    except (KeyError, ValueError, OverflowError) as exc:
+        raise IllmError(ErrorCode.INVALID_ARGUMENT, "JUnit report has invalid testcase accounting") from exc
+    if result["tests"] <= result["skipped"] or result["failures"] or result["errors"] or not math.isfinite(result["duration_s"]):
         raise IllmError(ErrorCode.INVALID_ARGUMENT, "JUnit report is not passing", result)
     return result
 
@@ -112,9 +138,10 @@ def _verify_quality(path: Path) -> dict[str, Any]:
     quality = _read_json(path, "quality report")
     type_check = quality.get("type_check")
     if (
-        quality.get("status") != "pass"
+        quality.get("schema_version") != 0
+        or quality.get("status") != "pass"
         or quality.get("issues") != []
-        or not isinstance(quality.get("checked_python_files"), int)
+        or type(quality.get("checked_python_files")) is not int
         or quality.get("checked_python_files", 0) < 1
         or not isinstance(type_check, dict)
         or type_check.get("tool") != "mypy"
@@ -156,6 +183,10 @@ def create_profile_evidence(
     capture: Path,
     output: Path,
 ) -> dict[str, Any]:
+    toolchain_manifest = _filesystem_path(toolchain_manifest)
+    junit = _filesystem_path(junit)
+    quality = _filesystem_path(quality)
+    capture = _filesystem_path(capture)
     system = platform.system()
     profile_id = PROFILE_BY_OS.get(system)
     if profile_id is None:
@@ -176,7 +207,7 @@ def create_profile_evidence(
     _verify_quality(quality)
     _verify_capture(capture)
 
-    output = output.resolve()
+    output = _filesystem_path(output)
     if output.exists():
         raise IllmError(ErrorCode.INVALID_ARGUMENT, "qualification evidence output already exists")
     temporary = output.with_name(f".{output.name}.tmp-{os.getpid()}")
@@ -239,7 +270,7 @@ def verify_profile_evidence(
     *,
     expected_source_identity: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    root = root.resolve()
+    root = _filesystem_path(root)
     if (root / "INCOMPLETE").exists() or not (root / "COMPLETE").is_file():
         raise IllmError(ErrorCode.CAPTURE_INCOMPLETE, "qualification evidence is not finalized")
     profile = _read_json(root / "profile-result.json", "profile result")
@@ -262,6 +293,8 @@ def verify_profile_evidence(
         raise IllmError(ErrorCode.INVALID_ARGUMENT, "qualification evidence file set is invalid")
     if not isinstance(source_identity, dict) or set(source_identity) != SOURCE_IDENTITY_FIELDS:
         raise IllmError(ErrorCode.INVALID_ARGUMENT, "qualification source identity is invalid")
+    if not all(_is_sha256(value) for value in source_identity.values()):
+        raise IllmError(ErrorCode.INVALID_ARGUMENT, "qualification source identity digests are invalid")
     for name, expected_digest in files.items():
         path = root / name
         if not _is_sha256(expected_digest) or not path.is_file() or sha256_file(path) != expected_digest:
@@ -272,6 +305,13 @@ def verify_profile_evidence(
     toolchain = _read_json(root / "toolchain.json", "qualified toolchain manifest")
     if toolchain.get("manifest_digest") != _manifest_digest(toolchain):
         raise IllmError(ErrorCode.TOOLCHAIN_MISMATCH, "qualified toolchain manifest digest mismatch")
+    if (
+        toolchain.get("schema_version") != 0
+        or toolchain.get("finalized") is not True
+        or any(toolchain.get(field) != index.get(field) for field in ("os", "arch", "python_version"))
+        or profile.get("reason") is not None
+    ):
+        raise IllmError(ErrorCode.TOOLCHAIN_MISMATCH, "qualified toolchain platform/finalization mismatch")
     if profile.get("environment_manifest_digest") != toolchain.get("manifest_digest"):
         raise IllmError(ErrorCode.TOOLCHAIN_MISMATCH, "qualification environment digest mismatch")
     if any(toolchain.get(field) != source_identity[field] for field in SOURCE_IDENTITY_FIELDS):
@@ -279,8 +319,17 @@ def verify_profile_evidence(
     if expected_source_identity is not None and dict(source_identity) != dict(expected_source_identity):
         raise IllmError(ErrorCode.TOOLCHAIN_MISMATCH, "qualification evidence belongs to different source")
     parse_junit(root / "junit.xml")
-    _verify_quality(root / "quality.json")
-    _verify_capture(root / "capture")
+    quality = _verify_quality(root / "quality.json")
+    packages = toolchain.get("installed_packages")
+    if not isinstance(packages, dict) or quality["type_check"]["version"] != packages.get("mypy"):
+        raise IllmError(ErrorCode.TOOLCHAIN_MISMATCH, "qualified type checker differs from locked toolchain")
+    capture = _verify_capture(root / "capture")
+    run = capture.manifest.get("run")
+    if not isinstance(run, dict) or any(
+        run.get(run_field) != toolchain.get(toolchain_field)
+        for run_field, toolchain_field in (("os", "os"), ("arch", "arch"), ("python", "python_version"))
+    ):
+        raise IllmError(ErrorCode.TOOLCHAIN_MISMATCH, "qualified capture platform differs from toolchain")
     return profile, index
 
 
@@ -290,7 +339,8 @@ def merge_profile_evidence(
     base_toolchain_manifest: Path,
     evidence_roots: Iterable[Path],
 ) -> dict[str, Any]:
-    release_dir = release_dir.resolve()
+    release_dir = _filesystem_path(release_dir)
+    base_toolchain_manifest = _filesystem_path(base_toolchain_manifest)
     manifest_path = release_dir / "manifest.json"
     manifest = _read_json(manifest_path, "release manifest")
     verify_release_manifest(manifest_path)
@@ -304,6 +354,7 @@ def merge_profile_evidence(
     }
     profiles = {str(item["profile_id"]): dict(item) for item in manifest["qualification_profiles"]}
     for evidence_root in evidence_roots:
+        evidence_root = _filesystem_path(evidence_root)
         profile, index = verify_profile_evidence(
             evidence_root,
             expected_source_identity=source_identity,
