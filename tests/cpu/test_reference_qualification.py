@@ -22,8 +22,8 @@ from illm.domain.errors import ErrorCode, IllmError
 from illm.domain.reference_events import ReferenceEventKind as K
 from illm.model.spec import SupportedModelSpec
 from illm.reference_qualification import (
-    CRITICAL_TESTS, FORMAL_PROFILE_RUNTIMES, RUNTIME_LOCKS, TINY_FILES, _canonical_shape, _compound_fault, _inventory,
-    _op_order, _oracle_contract, _source_provenance, _tiny_fault, _tolerances, create_reference_profile_evidence,
+    BASE_LOCKS, BOOTSTRAP_FILES, CRITICAL_TESTS, FORMAL_PROFILE_RUNTIMES, PROJECT_FILES, RUNTIME_LOCKS, TINY_FILES, _canonical_shape, _compound_fault, _inventory,
+    _op_order, _oracle_contract, _source_provenance, _tiny_fault, _tolerances, _verify_source, create_reference_profile_evidence,
     verify_reference_profile_evidence,
 )
 from illm.sampling import SamplingSpec
@@ -210,7 +210,26 @@ def _locked_versions(provenance: dict[str, Any], runtime: dict[str, Any]) -> dic
 def _build_cpu_profile(tmp_path: Path, *, profile_id: str, runtime_id: str) -> Path:
     inputs = tmp_path / "inputs"
     inputs.mkdir()
-    provenance = _source_provenance(ROOT)
+    # Exercise the historical V0.1 format with an explicitly synthetic V0.1
+    # source authority. The development checkout can now be V0.2 or later; it
+    # must NOT be relabelled as a valid V0.1 production environment or make the
+    # production verifier accept future package versions.
+    unit_source = tmp_path / "unit-source-v01-not-executed"
+    selected = {
+        *PROJECT_FILES, *BOOTSTRAP_FILES,
+        *(f"fixtures/tiny-decoder/{name}" for name in TINY_FILES),
+        f"runtime/artifacts/{runtime_id}.json",
+        *(path.relative_to(ROOT).as_posix() for path in (ROOT / "vendor" / "wheels").glob("*.whl")),
+    }
+    for name in selected:
+        target = unit_source / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / name, target)
+    (unit_source / "pyproject.toml").write_text(
+        '# Synthetic historical verifier unit authority, not an installed package.\n'
+        '[project]\nname = "illm"\nversion = "0.1.0"\n', encoding="utf-8",
+    )
+    provenance = _source_provenance(unit_source)
     # Unit fixture uses the real pinned closure metadata, not an installed-env claim.
     runtime = _read(ROOT / "runtime" / "artifacts" / f"{runtime_id}.json")
     versions = _locked_versions(provenance, runtime)
@@ -219,7 +238,7 @@ def _build_cpu_profile(tmp_path: Path, *, profile_id: str, runtime_id: str) -> P
     arch = {"Windows": "AMD64", "Linux": "x86_64"}[system]
     toolchain = {"schema_version": 1, "finalized": True, "profile": "unit-fixture-not-real-qualification",
                  "os": system, "arch": arch, "python_version": runtime["target"]["python_validation_patch"],
-                 "project_root": str(ROOT),
+                 "project_root": str(unit_source),
                  "environment_root": "/absent/unit-only/environment", "python_executable": "/absent/unit-only/python",
                  "entrypoints": {"illm": "/absent/unit-only/illm"}, "environment_id": "unit-only-not-installed",
                  "project_root_digest": source["project_root_digest"], "bootstrap_digest": source["bootstrap_digest"],
@@ -326,6 +345,14 @@ def test_formal_profiles_pin_distinct_exact_runtime_platforms() -> None:
         "clean-room-release-v1": "py312-linux-x86_64-cpu",
         "real-model-single-gpu-v1": "py312-linux-x86_64-cu126",
     }
+
+
+def test_v01_source_reader_never_grants_qualification_to_a_future_package(sealed: Path) -> None:
+    provenance = _read(sealed / "source-provenance.json")
+    provenance["project_version"] = "0.2.0.dev0"
+    _write(sealed / "source-provenance.json", provenance)
+    with pytest.raises(IllmError, match="qualification project package identity is not V0.1"):
+        _verify_source(sealed, None)
 
 
 def test_ci_only_runtime_cannot_grant_formal_release_qualification(sealed: Path) -> None:

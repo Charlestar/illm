@@ -64,7 +64,7 @@ def _parser() -> IllmArgumentParser:
 
     replay = subparsers.add_parser("replay")
     replay.add_argument("capture", type=Path)
-    replay.add_argument("--mode", choices=("trace", "state"), required=True)
+    replay.add_argument("--mode", choices=("trace", "state", "execute", "what-if"), required=True)
     replay.add_argument("--assert-state-digest", action="store_true")
     replay.add_argument("--request-id")
     replay.add_argument("--step-id", type=int)
@@ -75,6 +75,9 @@ def _parser() -> IllmArgumentParser:
     verify.add_argument("manifest", type=Path)
     verify.add_argument("--output", type=Path)
     verify.add_argument("--require-current-source", action="store_true")
+    from illm.api.streaming_cli import add_streaming_commands
+
+    add_streaming_commands(subparsers)
     return parser
 
 
@@ -117,10 +120,26 @@ def _replay(args: argparse.Namespace) -> int:
     except ValueError as exc:
         raise IllmError(ErrorCode.CAPTURE_CORRUPT, "capture manifest is not valid JSON") from exc
     schema = header.get("schema_version") if isinstance(header, dict) else None
-    if type(schema) is not int or schema not in {0, 1}:
+    if type(schema) is not int or schema not in {0, 1, 2}:
         raise IllmError(ErrorCode.UNSUPPORTED_SCHEMA, "unsupported capture schema")
+    if schema == 2:
+        from illm.capture.streaming import StreamingCaptureBundle
+
+        if args.mode != "trace" or args.assert_state_digest or args.step_id is not None:
+            raise IllmError(ErrorCode.UNSUPPORTED_SCHEMA, "stateful V0.2 capture supports R0 trace only",
+                            {"capabilities": ["R0"], "missing": ["control_checkpoint", "state_deltas", "numerical_inputs", "RNG_reexecution_inputs"]})
+        streaming = StreamingCaptureBundle.open(args.capture)
+        request_id = args.request_id or str(streaming.manifest["request_id"])
+        print(canonical_json_text(streaming.request_story(request_id)))
+        return 0
     if schema == 1:
+        if args.mode not in {"trace", "state"}:
+            raise IllmError(ErrorCode.UNSUPPORTED_SCHEMA, "reference capture has no numerical or what-if replay",
+                            {"capabilities": ["R0", "R1_REFERENCE"], "missing": ["numerical_inputs", "RNG_reexecution_inputs", "scheduler_simulation"]})
         return _reference_replay(args)
+    if args.mode not in {"trace", "state"}:
+        raise IllmError(ErrorCode.UNSUPPORTED_SCHEMA, "toy capture has no numerical or what-if replay",
+                        {"capabilities": ["R0", "R1_TOY"], "missing": ["model_execution", "numerical_inputs", "what_if_contract"]})
     bundle = CaptureBundle.open(args.capture)
     if args.mode == "trace":
         print("seq kind step request reason")
@@ -264,6 +283,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             stream.reconfigure(encoding="utf-8", errors="strict")
     try:
         args = _parser().parse_args(argv)
+        from illm.api.streaming_cli import dispatch
+
+        streaming_result = dispatch(args)
+        if streaming_result is not None:
+            return streaming_result
         if args.command == "demo":
             return _demo(args)
         if args.command == "replay":

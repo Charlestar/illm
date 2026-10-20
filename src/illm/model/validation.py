@@ -7,7 +7,7 @@ import hashlib
 import importlib
 import math
 from pathlib import Path
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from typing import Any, Callable, Mapping, Protocol, cast
 
 import torch
@@ -17,6 +17,9 @@ from torch.nn import functional as F
 from illm.model.loader import LoadedModel
 from illm.model.reference import OpRecord, ReferenceDecoder, canonical_op_names
 from illm.model.spec import ModelError
+from illm.numerical_contracts import FIXED_PROMPTS as FIXED_PROMPTS
+from illm.numerical_contracts import TensorTolerance as TensorTolerance
+from illm.numerical_contracts import tensor_tolerances
 from illm.model.spec import canonical_bytes, digest
 
 
@@ -46,17 +49,8 @@ class TransformersOracle(Protocol):
                  use_cache: bool = False) -> _OracleOutput: ...
 
 
-@dataclass(frozen=True, slots=True)
-class TensorTolerance:
-    atol: float = 1e-4
-    rtol: float = 1e-3
-    profile_id: str = "tiny-fp32-op-v1"
-
-    def __post_init__(self) -> None:
-        if any(isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value) or value < 0 for value in (self.atol, self.rtol)):
-            raise ModelError("INVALID_ARGUMENT", "tensor tolerances must be finite nonnegative numbers")
-        if not isinstance(self.profile_id, str) or not self.profile_id:
-            raise ModelError("INVALID_ARGUMENT", "tolerance profile ID is required")
+def _tolerances(dtype: str) -> tuple[TensorTolerance, TensorTolerance]:
+    return tensor_tolerances(dtype)
 
 
 def collect_reference_ops(reference: ReferenceDecoder, input_ids: Tensor, *, position_ids: Tensor | None = None) -> dict[str, Tensor]:
@@ -260,23 +254,6 @@ def collect_transformers_ops(oracle: TransformersOracle, input_ids: Tensor, load
         raise ModelError("ORACLE_DIVERGED", "oracle trace coverage/order differs from canonical op contract")
     return trace
 
-
-FIXED_PROMPTS = (
-    "hello", "a", "The capital of France is", "1 + 1 =", "Explain a token",
-    "Inference", "KV cache", "Qwen", "你好", "模型", "A B C", "0", "12345",
-    "\n", " ", "python", "def f(x):", "Once upon a time", "CPU and GPU", "🌍",
-)
-
-
-def _tolerances(dtype: str) -> tuple[TensorTolerance, TensorTolerance]:
-    # ADR-005 thresholds are declared before numerical qualification.
-    if dtype == "bf16":
-        return (TensorTolerance(0.0625, 0.02, "real-bf16-op-v1"),
-                TensorTolerance(0.005, 0.02, "real-bf16-attention-probability-v1"))
-    if dtype == "fp16":
-        return (TensorTolerance(0.0078125, 0.01, "real-fp16-op-v1"),
-                TensorTolerance(0.001, 0.01, "real-fp16-attention-probability-v1"))
-    return TensorTolerance(), TensorTolerance()
 
 
 def _write_report(path: Path, report: Mapping[str, Any]) -> None:

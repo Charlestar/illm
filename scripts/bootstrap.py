@@ -53,6 +53,8 @@ def _parser() -> ToolchainArgumentParser:
     parser.add_argument("--runtime-profile", help="explicit v01-cpu/v01-cuda alias or runtime profile ID")
     parser.add_argument("--artifact-cache", type=Path)
     parser.add_argument("--offline", action="store_true", help="bootstrap always operates offline; explicit for tutorials")
+    parser.add_argument("--require-new-environment", action="store_true",
+                        help="atomically refuse an existing managed environment instead of replacing it")
     return parser
 
 
@@ -209,10 +211,20 @@ def bootstrap(argv: Sequence[str] | None = None) -> dict[str, object]:
     if digest_path and not is_within(digest_path, project_root):
         raise ToolchainFailure("INVALID_ARGUMENT", "manifest digest must be inside project root")
     environments_root = (project_root / ".illm" / "envs").resolve()
+    if args.require_new_environment and not environments_root.is_relative_to(project_root):
+        raise ToolchainFailure("INVALID_ARGUMENT", "fresh environment root must remain inside the project")
     environments_root.mkdir(parents=True, exist_ok=True)
     environment_root = (environments_root / args.profile).resolve()
-    _safe_remove_environment(environment_root, environments_root)
-    environment_root.mkdir(parents=True)
+    if args.require_new_environment:
+        if (environments_root / args.profile).is_symlink() or environment_root.parent != environments_root:
+            raise ToolchainFailure("INVALID_ARGUMENT", "fresh environment cannot follow an escaped link")
+        try:
+            environment_root.mkdir(exist_ok=False)
+        except FileExistsError as exc:
+            raise ToolchainFailure("INVALID_ARGUMENT", "fresh environment already exists and will not be replaced") from exc
+    else:
+        _safe_remove_environment(environment_root, environments_root)
+        environment_root.mkdir(parents=True)
     atomic_write_json(environment_root / "INCOMPLETE", {"reason": "bootstrap_in_progress"})
 
     expected_lock_digest = lock_digest(project_root, runtime_lock)

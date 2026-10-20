@@ -24,6 +24,11 @@ def test_registry_json_files_are_parseable_and_match_code() -> None:
     extra_errors = {(item["code"], item["exit_code"]) for item in extension["errors"]}
     assert not {code for code, _ in registered_errors} & {code for code, _ in extra_errors}
     registered_errors |= extra_errors
+    streaming = json.loads((ROOT / "registries" / "errors-v2.json").read_text(encoding="utf-8"))
+    assert streaming["extends"] == "errors-v1.json"
+    streaming_errors = {(item["code"], item["exit_code"]) for item in streaming["errors"]}
+    assert not {code for code, _ in registered_errors} & {code for code, _ in streaming_errors}
+    registered_errors |= streaming_errors
     code_errors = {(code.value, EXIT_CODE[code]) for code in ErrorCode}
     assert registered_errors == code_errors
 

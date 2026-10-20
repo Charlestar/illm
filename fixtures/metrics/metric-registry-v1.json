@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "registry_id": "illm.metric-registry.v1",
+  "stability": "experimental",
+  "metrics": [
+    {
+      "id": "illm.server.ttft.request_weighted.p99.v1",
+      "stability": "experimental",
+      "kind": "derived_distribution",
+      "unit": "s",
+      "measurement_boundary": "request.accepted to first committed token server_ready_ns",
+      "aggregation": {
+        "kind": "nearest_rank",
+        "quantile_numerator": 99,
+        "quantile_denominator": 100,
+        "rank": "ceil(0.99*N)",
+        "interpolation": "none"
+      },
+      "weighting": "request",
+      "denominator": "accepted requests with at least one committed output token",
+      "censor_rule": "accepted requests with zero output increment ttft_censored_before_first_token",
+      "outcome_stratified": false
+    },
+    {
+      "id": "illm.server.itl.token_weighted.p99.v1",
+      "stability": "experimental",
+      "kind": "derived_distribution",
+      "unit": "s",
+      "measurement_boundary": "adjacent committed token server_ready_ns timestamps",
+      "aggregation": {
+        "kind": "nearest_rank",
+        "quantile_numerator": 99,
+        "quantile_denominator": 100,
+        "rank": "ceil(0.99*N)",
+        "interpolation": "none"
+      },
+      "weighting": "token",
+      "denominator": "all formed adjacent output-token intervals of accepted requests",
+      "censor_rule": "accepted requests with fewer than two outputs increment itl_censored_insufficient_output",
+      "outcome_stratified": false
+    },
+    {
+      "id": "illm.server.tpot.request_weighted.p99.v1",
+      "stability": "experimental",
+      "kind": "derived_distribution",
+      "unit": "s/token",
+      "measurement_boundary": "(last_server_ready_ns-first_server_ready_ns)/(committed_output_count-1)",
+      "aggregation": {
+        "kind": "nearest_rank",
+        "quantile_numerator": 99,
+        "quantile_denominator": 100,
+        "rank": "ceil(0.99*N)",
+        "interpolation": "none"
+      },
+      "weighting": "request",
+      "denominator": "accepted requests with at least two committed output tokens",
+      "censor_rule": "accepted requests with fewer than two outputs increment tpot_censored_insufficient_output",
+      "outcome_stratified": false
+    },
+    {
+      "id": "illm.server.e2e.request_weighted.p99.v1",
+      "stability": "experimental",
+      "kind": "derived_distribution",
+      "unit": "s",
+      "measurement_boundary": "request.accepted to terminal server commit/ready",
+      "aggregation": {
+        "kind": "nearest_rank",
+        "quantile_numerator": 99,
+        "quantile_denominator": 100,
+        "rank": "ceil(0.99*N)",
+        "interpolation": "none"
+      },
+      "weighting": "request",
+      "denominator": "all accepted requests with exactly one terminal outcome",
+      "censor_rule": "missing terminal is invalid; results are stratified by terminal outcome",
+      "outcome_stratified": true
+    },
+    {
+      "id": "illm.client.e2e.request_weighted.p99.v1",
+      "stability": "experimental",
+      "kind": "derived_distribution",
+      "unit": "s",
+      "measurement_boundary": "client send start to terminal chunk or structured close observed by client",
+      "aggregation": {
+        "kind": "nearest_rank",
+        "quantile_numerator": 99,
+        "quantile_denominator": 100,
+        "rank": "ceil(0.99*N)",
+        "interpolation": "none"
+      },
+      "weighting": "request",
+      "denominator": "accepted terminal requests with a complete client timestamp pair",
+      "censor_rule": "missing client timestamp pairs increment client_e2e_missing; results are outcome stratified",
+      "outcome_stratified": true
+    }
+  ]
+}

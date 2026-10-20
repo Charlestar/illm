@@ -1,0 +1,1 @@
+{"schema_version":2,"extends":"errors-v1.json","errors":[{"code":"OVERLOADED","exit_code":90},{"code":"CONTEXT_LIMIT_EXCEEDED","exit_code":91},{"code":"ENGINE_UNHEALTHY","exit_code":92},{"code":"UNSUPPORTED","exit_code":93}]}

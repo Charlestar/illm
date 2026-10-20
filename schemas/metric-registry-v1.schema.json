@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://illm.local/schemas/metric-registry-v1.schema.json",
+  "title": "MetricRegistryV1",
+  "type": "object",
+  "required": ["schema_version", "registry_id", "stability", "metrics"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "registry_id": {"const": "illm.metric-registry.v1"},
+    "stability": {"const": "experimental"},
+    "metrics": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        {
+          "allOf": [
+            {"$ref": "#/$defs/metric"},
+            {
+              "properties": {
+                "id": {"const": "illm.server.ttft.request_weighted.p99.v1"},
+                "unit": {"const": "s"},
+                "weighting": {"const": "request"},
+                "outcome_stratified": {"const": false}
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {"$ref": "#/$defs/metric"},
+            {
+              "properties": {
+                "id": {"const": "illm.server.itl.token_weighted.p99.v1"},
+                "unit": {"const": "s"},
+                "weighting": {"const": "token"},
+                "outcome_stratified": {"const": false}
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {"$ref": "#/$defs/metric"},
+            {
+              "properties": {
+                "id": {"const": "illm.server.tpot.request_weighted.p99.v1"},
+                "unit": {"const": "s/token"},
+                "weighting": {"const": "request"},
+                "outcome_stratified": {"const": false}
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {"$ref": "#/$defs/metric"},
+            {
+              "properties": {
+                "id": {"const": "illm.server.e2e.request_weighted.p99.v1"},
+                "unit": {"const": "s"},
+                "weighting": {"const": "request"},
+                "outcome_stratified": {"const": true}
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {"$ref": "#/$defs/metric"},
+            {
+              "properties": {
+                "id": {"const": "illm.client.e2e.request_weighted.p99.v1"},
+                "unit": {"const": "s"},
+                "weighting": {"const": "request"},
+                "outcome_stratified": {"const": true}
+              }
+            }
+          ]
+        }
+      ],
+      "items": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "metric": {
+      "type": "object",
+      "required": [
+        "id",
+        "stability",
+        "kind",
+        "unit",
+        "measurement_boundary",
+        "aggregation",
+        "weighting",
+        "denominator",
+        "censor_rule",
+        "outcome_stratified"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^illm\\.[a-z0-9_.]+\\.v1$"},
+        "stability": {"const": "experimental"},
+        "kind": {"const": "derived_distribution"},
+        "unit": {"enum": ["s", "s/token"]},
+        "measurement_boundary": {"type": "string", "minLength": 1},
+        "aggregation": {
+          "type": "object",
+          "required": ["kind", "quantile_numerator", "quantile_denominator", "rank", "interpolation"],
+          "properties": {
+            "kind": {"const": "nearest_rank"},
+            "quantile_numerator": {"const": 99},
+            "quantile_denominator": {"const": 100},
+            "rank": {"const": "ceil(0.99*N)"},
+            "interpolation": {"const": "none"}
+          },
+          "additionalProperties": false
+        },
+        "weighting": {"enum": ["request", "token"]},
+        "denominator": {"type": "string", "minLength": 1},
+        "censor_rule": {"type": "string", "minLength": 1},
+        "outcome_stratified": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

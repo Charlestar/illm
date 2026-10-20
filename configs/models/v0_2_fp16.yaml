@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "model_id": "Qwen/Qwen2.5-0.5B",
+  "model_revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+  "tokenizer_revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+  "assets_directory": ".illm/models/qwen2.5-0.5b/060db6499f32faf8b98477b0a26969ef7d8b9987",
+  "runtime_dtype": "fp16",
+  "max_context_tokens": 512,
+  "minimum_gpu_memory_bytes": 6442450944,
+  "minimum_compute_capability": [8, 0],
+  "tokenizer_kind": "hf-tokenizers-json",
+  "artifacts": [
+    {"path": "config.json", "bytes": 681, "git_blob_sha1": "141506237b9022c4ab3e01734cfafb9310b57d2d"},
+    {"path": "model.safetensors", "bytes": 988097824, "sha256": "88c142557820ccad55bb59756bfcfcf891de9cc6202816bd346445188a0ed342"},
+    {"path": "tokenizer.json", "bytes": 7031645, "git_blob_sha1": "443909a61d429dff23010e5bddd28ff530edda00"},
+    {"path": "tokenizer_config.json", "bytes": 7228, "git_blob_sha1": "ba7e4c5637b9732dadcd66286ce48334e8b31e9e"}
+  ]
+}

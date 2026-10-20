@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "suite_id": "illm.v02.single-request.heldout.v1",
+  "suite": "heldout",
+  "public_synthetic": true,
+  "sampling_spec": {
+    "schema_version": 1,
+    "mode": "greedy",
+    "temperature": 0.0,
+    "top_k": 0,
+    "top_p": 1.0,
+    "compute_dtype": "fp32",
+    "processor_order_version": 1,
+    "rng_algorithm": "philox4x32-10",
+    "rng_contract_version": 1,
+    "actual_seed": 7
+  },
+  "targets": {
+    "tiny": {
+      "required_capacity_tokens": 256,
+      "cases": [
+        {
+          "case_id": "tiny-heldout-unicode-v1",
+          "source": {
+            "kind": "public-token-ids-v1",
+            "token_ids": [1, 231, 192, 163, 232, 168, 192]
+          },
+          "prompt_tokens": 7,
+          "max_new_tokens": 3
+        }
+      ]
+    },
+    "real": {
+      "required_capacity_tokens": 512,
+      "cases": [
+        {
+          "case_id": "real-heldout-256x64-v1",
+          "source": {
+            "kind": "encoded-public-text-cycle-v1",
+            "text": "iLLM V0.2 public held-out sequence. Measure facts, preserve identities, make no speed claim. ",
+            "add_bos": false
+          },
+          "prompt_tokens": 256,
+          "max_new_tokens": 64
+        }
+      ]
+    }
+  },
+  "suite_digest": "50ec684ffbc2e649a450b805f6ac11687ebd818a1cc22c5ad95faf041a5bac44"
+}

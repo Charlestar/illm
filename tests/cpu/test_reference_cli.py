@@ -83,7 +83,7 @@ def test_schema_one_cli_replays_controls_not_model_numbers(tmp_path: Path, capsy
     assert main(["replay", str(capture.root), "--mode", "state", "--step-id", "0"]) == 64
 
 
-@pytest.mark.parametrize("schema", [True, "1", 2])
+@pytest.mark.parametrize("schema", [True, "1", 3])
 def test_cli_never_guesses_unknown_capture_schema(tmp_path: Path, schema: object) -> None:
     (tmp_path / "capture-manifest.json").write_text(json.dumps({"schema_version": schema}), encoding="utf-8")
     assert main(["replay", str(tmp_path), "--mode", "trace"]) == 78
@@ -155,12 +155,12 @@ def test_current_source_flag_is_v01_only(
     assert json.loads(capsys.readouterr().err)["code"] == "UNSUPPORTED_SCHEMA"
 
 
-def test_ci_binds_only_the_v01_bundle_to_the_current_checkout() -> None:
+def test_ci_audits_both_published_bundles_as_historical_facts() -> None:
     workflow = (Path(__file__).resolve().parents[2] / ".github" / "workflows" / "cpu.yml").read_text(encoding="utf-8")
     commands = [line.strip() for line in workflow.splitlines() if "illm release verify release/" in line]
     v01 = [line for line in commands if "release/v0.1.0/manifest.json" in line]
     historical = [line for line in commands if "release/v0.0.0/manifest.json" in line]
-    assert len(v01) == 1 and "--require-current-source" in v01[0]
+    assert len(v01) == 1 and "--require-current-source" not in v01[0]
     assert historical and all("--require-current-source" not in line for line in historical)
 
 

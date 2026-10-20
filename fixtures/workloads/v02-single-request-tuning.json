@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "suite_id": "illm.v02.single-request.tuning.v1",
+  "suite": "tuning",
+  "public_synthetic": true,
+  "sampling_spec": {
+    "schema_version": 1,
+    "mode": "greedy",
+    "temperature": 0.0,
+    "top_k": 0,
+    "top_p": 1.0,
+    "compute_dtype": "fp32",
+    "processor_order_version": 1,
+    "rng_algorithm": "philox4x32-10",
+    "rng_contract_version": 1,
+    "actual_seed": 7
+  },
+  "targets": {
+    "tiny": {
+      "required_capacity_tokens": 256,
+      "cases": [
+        {
+          "case_id": "tiny-tuning-short-v1",
+          "source": {
+            "kind": "public-token-ids-v1",
+            "token_ids": [1, 107, 104, 111, 111, 114]
+          },
+          "prompt_tokens": 6,
+          "max_new_tokens": 4
+        }
+      ]
+    },
+    "real": {
+      "required_capacity_tokens": 512,
+      "cases": [
+        {
+          "case_id": "real-tuning-256x64-v1",
+          "source": {
+            "kind": "encoded-public-text-cycle-v1",
+            "text": "iLLM V0.2 public synthetic tuning workload. Stateful decoding and contiguous KV. ",
+            "add_bos": false
+          },
+          "prompt_tokens": 256,
+          "max_new_tokens": 64
+        }
+      ]
+    }
+  },
+  "suite_digest": "9b0a020d3b4f2d9f83f0d6d8712a5a99d7ad8612f25f24f4a41171b121bd58ce"
+}

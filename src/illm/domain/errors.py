@@ -5,6 +5,10 @@ from enum import Enum
 from typing import Any, Mapping
 
 
+class EmergencyAbandon(KeyboardInterrupt):
+    """Second-interrupt control flow: quarantine, do not wait for another fence."""
+
+
 class ErrorCode(str, Enum):
     INVALID_ARGUMENT = "INVALID_ARGUMENT"
     TOOLCHAIN_MISMATCH = "TOOLCHAIN_MISMATCH"
@@ -23,6 +27,10 @@ class ErrorCode(str, Enum):
     ORACLE_DIVERGED = "ORACLE_DIVERGED"
     RESOURCE_EXHAUSTED = "RESOURCE_EXHAUSTED"
     ENGINE_BUSY = "ENGINE_BUSY"
+    OVERLOADED = "OVERLOADED"
+    CONTEXT_LIMIT_EXCEEDED = "CONTEXT_LIMIT_EXCEEDED"
+    ENGINE_UNHEALTHY = "ENGINE_UNHEALTHY"
+    UNSUPPORTED = "UNSUPPORTED"
     INTERNAL = "INTERNAL"
 
 
@@ -44,6 +52,10 @@ EXIT_CODE: dict[ErrorCode, int] = {
     ErrorCode.ORACLE_DIVERGED: 87,
     ErrorCode.RESOURCE_EXHAUSTED: 88,
     ErrorCode.ENGINE_BUSY: 89,
+    ErrorCode.OVERLOADED: 90,
+    ErrorCode.CONTEXT_LIMIT_EXCEEDED: 91,
+    ErrorCode.ENGINE_UNHEALTHY: 92,
+    ErrorCode.UNSUPPORTED: 93,
     ErrorCode.INTERNAL: 1,
 }
 

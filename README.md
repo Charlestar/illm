@@ -1,7 +1,7 @@
 # iLLM
 
-iLLM is an inspectable inference-runtime learning project. **V0.1 Reference
-Runner** (`0.1.0`) implements a tiny eager Transformer, strict local weight
+iLLM is an inspectable inference-runtime learning project. The latest published
+checkpoint, **V0.1 Reference Runner** (`v0.1.0`), implements a tiny eager Transformer, strict local weight
 loading, canonical sampling and metadata-only capture/control replay. Its real
 model is pinned Qwen2.5-0.5B, with separate BF16/FP16 numerical profiles.
 The tiny weights are synthetic correctness fixtures, not a trained chatbot.
@@ -16,6 +16,10 @@ later qualification and release facts without rewriting that SPEC. See the
 The preserved `v0.0.0` checkpoint contains a CPU-only deterministic toy
 scheduler, events, capture and replay, with no tensor/model execution.
 V0.1 deliberately has no KV cache, streaming, batching, HTTP or Web UI.
+The current `main` is **V0.2 development** (`0.2.0.dev0`): it adds contiguous
+KV, streaming, cancellation and R0 Request Story. It is not yet qualified or
+tagged. Use an independent checkout of `v0.1.0` for the published learning
+version; do not confuse development tests with a released checkpoint.
 
 ## V0.0 quickstart
 
@@ -66,6 +70,30 @@ The completed release bundle includes static learning diagrams in
 `release/v0.1.0/screenshots/model-and-diff/`: model structure and first-op
 divergence, each bound to the recorded model and numerical evidence. They are
 generated SVG diagrams, not screenshots of a nonexistent Web UI.
+
+## V0.2 development quickstart
+
+This is an unqualified development path, not a published V0.2 release. Use the
+same platform CPython versions as above, but bootstrap a **new source-bound
+environment** for this checkout. The `v01-cpu` name identifies the reused pinned
+dependency artifacts, not the version or qualification of the project code.
+
+```text
+python scripts/fetch_runtime.py --runtime-profile v01-cpu --artifact-cache .illm/cache/runtime
+python scripts/bootstrap.py --profile study-v02 --runtime-profile v01-cpu --locked --offline --write-manifest out/study-v02/toolchain.json --write-manifest-digest out/study-v02/toolchain.sha256
+python scripts/in_env.py --manifest out/study-v02/toolchain.json --expected-manifest-digest-file out/study-v02/toolchain.sha256 -- python -m illm run --model fixture:tiny-decoder --prompt hello --max-new-tokens 8 --seed 7 --stream --capture out/study-v02/demo
+python scripts/in_env.py --manifest out/study-v02/toolchain.json --expected-manifest-digest-file out/study-v02/toolchain.sha256 -- python -m illm inspect request out/study-v02/demo --request req-0001 --chrome-trace out/study-v02/trace.json
+python scripts/in_env.py --manifest out/study-v02/toolchain.json --expected-manifest-digest-file out/study-v02/toolchain.sha256 -- python scripts/render_streaming_learning.py out/study-v02/demo --output out/study-v02/views
+```
+
+Try `--kv-mode none` with a **different** capture path, or
+`--cancel-after-tokens 3` to observe safe cancellation. New captures are schema2,
+R0 only; old toy/reference captures retain their own capabilities. The generated
+PNG/SVG is a data-derived diagram, not a live UI screenshot or CUDA kernel trace.
+See the [V0.2 teach-back](docs/teach-back-v0.2.md),
+[runnable Python example](docs/examples/v0_2_streaming.py),
+[development status](docs/implementation/v0.2-status.md), and
+[known limitations](docs/known-limitations-v0.2.md).
 
 ## Qualification boundaries
 

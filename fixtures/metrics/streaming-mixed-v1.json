@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "observations": [
+    {
+      "request_id": "finished-three",
+      "accepted_ns": 1000000000,
+      "token_ready_ns": [1100000000, 1200000000, 1600000000],
+      "terminal_ready_ns": 1700000000,
+      "outcome": "FINISHED",
+      "client_send_ns": 900000000,
+      "client_terminal_ns": 1800000000,
+      "preaccept_reason": null,
+      "server_clock_domain": "perf_counter_ns:server",
+      "client_clock_domain": "perf_counter_ns:client"
+    },
+    {
+      "request_id": "failed-zero",
+      "accepted_ns": 2000000000,
+      "token_ready_ns": [],
+      "terminal_ready_ns": 2900000000,
+      "outcome": "FAILED",
+      "client_send_ns": null,
+      "client_terminal_ns": null,
+      "preaccept_reason": null,
+      "server_clock_domain": "perf_counter_ns:server",
+      "client_clock_domain": null
+    },
+    {
+      "request_id": "cancelled-one",
+      "accepted_ns": 3000000000,
+      "token_ready_ns": [3300000000],
+      "terminal_ready_ns": 3400000000,
+      "outcome": "CANCELLED",
+      "client_send_ns": 2950000000,
+      "client_terminal_ns": 3500000000,
+      "preaccept_reason": null,
+      "server_clock_domain": "perf_counter_ns:server",
+      "client_clock_domain": "perf_counter_ns:client"
+    },
+    {
+      "request_id": "failed-two",
+      "accepted_ns": 4000000000,
+      "token_ready_ns": [4200000000, 4800000000],
+      "terminal_ready_ns": 4900000000,
+      "outcome": "FAILED",
+      "client_send_ns": 3900000000,
+      "client_terminal_ns": 5000000000,
+      "preaccept_reason": null,
+      "server_clock_domain": "perf_counter_ns:server",
+      "client_clock_domain": "perf_counter_ns:client"
+    },
+    {
+      "request_id": "finished-four",
+      "accepted_ns": 6000000000,
+      "token_ready_ns": [6050000000, 6150000000, 6350000000, 7150000000],
+      "terminal_ready_ns": 7250000000,
+      "outcome": "FINISHED",
+      "client_send_ns": 5900000000,
+      "client_terminal_ns": 7400000000,
+      "preaccept_reason": null,
+      "server_clock_domain": "perf_counter_ns:server",
+      "client_clock_domain": "perf_counter_ns:client"
+    },
+    {
+      "request_id": "overloaded",
+      "accepted_ns": null,
+      "token_ready_ns": [],
+      "terminal_ready_ns": null,
+      "outcome": null,
+      "client_send_ns": null,
+      "client_terminal_ns": null,
+      "preaccept_reason": "SINGLE_ACTIVE_LIMIT",
+      "server_clock_domain": null,
+      "client_clock_domain": null
+    },
+    {
+      "request_id": "context-limit",
+      "accepted_ns": null,
+      "token_ready_ns": [],
+      "terminal_ready_ns": null,
+      "outcome": null,
+      "client_send_ns": null,
+      "client_terminal_ns": null,
+      "preaccept_reason": "CONTEXT_LIMIT_EXCEEDED",
+      "server_clock_domain": null,
+      "client_clock_domain": null
+    }
+  ],
+  "expected": {
+    "request_totals": {"offered": 7, "accepted": 5, "preaccept": 2},
+    "terminal_outcomes": {"FINISHED": 2, "CANCELLED": 1, "FAILED": 2, "DEADLINE_EXCEEDED": 0},
+    "preaccept_reasons": {"CONTEXT_LIMIT_EXCEEDED": 1, "SINGLE_ACTIVE_LIMIT": 1},
+    "counters": {
+      "ttft_censored_before_first_token": 1,
+      "itl_censored_insufficient_output": 2,
+      "tpot_censored_insufficient_output": 2,
+      "client_e2e_missing": 1
+    },
+    "metrics": {
+      "illm.server.ttft.request_weighted.p99.v1": {"unit": "s", "sample_count": 4, "p99": 0.3},
+      "illm.server.itl.token_weighted.p99.v1": {"unit": "s", "sample_count": 6, "p99": 0.8},
+      "illm.server.tpot.request_weighted.p99.v1": {"unit": "s/token", "sample_count": 3, "p99": 0.6},
+      "illm.server.e2e.request_weighted.p99.v1": {
+        "unit": "s",
+        "sample_count": 5,
+        "p99": 1.25,
+        "by_outcome": {
+          "FINISHED": {"sample_count": 2, "p99": 1.25},
+          "CANCELLED": {"sample_count": 1, "p99": 0.4},
+          "FAILED": {"sample_count": 2, "p99": 0.9},
+          "DEADLINE_EXCEEDED": {"sample_count": 0, "p99": null}
+        }
+      },
+      "illm.client.e2e.request_weighted.p99.v1": {
+        "unit": "s",
+        "sample_count": 4,
+        "p99": 1.5,
+        "by_outcome": {
+          "FINISHED": {"sample_count": 2, "p99": 1.5},
+          "CANCELLED": {"sample_count": 1, "p99": 0.55},
+          "FAILED": {"sample_count": 1, "p99": 1.1},
+          "DEADLINE_EXCEEDED": {"sample_count": 0, "p99": null}
+        }
+      }
+    }
+  }
+}

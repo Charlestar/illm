@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://illm.local/schemas/streaming-capture-manifest-v2.schema.json",
+  "title": "iLLM V0.2 Streaming Capture Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "finalized",
+    "event_envelope_version",
+    "event_catalog",
+    "capabilities",
+    "privacy_mode",
+    "replayable",
+    "non_replayable_reasons",
+    "critical_event_drop_count",
+    "request_id",
+    "identity",
+    "sampling_spec",
+    "sampling_spec_digest",
+    "memory_plan",
+    "memory_plan_digest",
+    "event_count",
+    "logical_terminal_outcome",
+    "terminal_outcome",
+    "files",
+    "manifest_digest"
+  ],
+  "allOf": [
+    {
+      "if": {"properties": {"finalized": {"const": true}}},
+      "then": {"properties": {"replayable": {"const": true}, "critical_event_drop_count": {"const": 0}, "non_replayable_reasons": {"const": []}}}
+    },
+    {
+      "if": {"properties": {"replayable": {"const": true}}},
+      "then": {"properties": {"finalized": {"const": true}}}
+    }
+  ],
+  "properties": {
+    "schema_version": {"const": 2},
+    "finalized": {"type": "boolean"},
+    "event_envelope_version": {"const": 1},
+    "event_catalog": {"const": "illm-stateful-v02-v1"},
+    "capabilities": {"const": ["R0"]},
+    "privacy_mode": {"const": "metadata_only"},
+    "replayable": {"type": "boolean"},
+    "non_replayable_reasons": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "critical_event_drop_count": {"type": "integer", "minimum": 0},
+    "request_id": {"type": "string", "minLength": 1},
+    "identity": {"type": "object"},
+    "sampling_spec": {"type": "object"},
+    "sampling_spec_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "memory_plan": {"type": "object"},
+    "memory_plan_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "event_count": {"type": "integer", "minimum": 0},
+    "logical_terminal_outcome": {
+      "type": ["string", "null"],
+      "enum": ["FINISHED", "CANCELLED", "FAILED", null]
+    },
+    "terminal_outcome": {"type": ["string", "null"], "enum": ["FINISHED", "CANCELLED", "FAILED", null]},
+    "files": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["events.jsonl", "checksums.json"],
+      "properties": {
+        "events.jsonl": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "checksums.json": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "manifest_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
