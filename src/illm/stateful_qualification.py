@@ -119,6 +119,31 @@ def _check_tree(root: Path) -> None:
             _fail("V0.2 qualification forbids unreferenced empty directories")
 
 
+def _check_gate_tree(root: Path) -> None:
+    """Validate evidence entries while treating pytest basetemp as scratch.
+
+    Pytest legitimately leaves empty directories and may create links while
+    exercising rejection paths.  Its one predeclared top-level scratch root is
+    therefore validated but never traversed.  Every evidence entry retains the
+    stricter qualification-tree rules and is copied later from an allowlist.
+    """
+
+    if root.is_symlink() or not root.is_dir():
+        _fail("V0.2 qualification root must be an ordinary directory")
+    resolved = root.resolve()
+    for path in root.iterdir():
+        if path.name == "pytest-temp":
+            if path.is_symlink() or not path.is_dir() or not path.resolve().is_relative_to(resolved):
+                _fail("V0.2 gate pytest scratch must be an ordinary in-root directory")
+            continue
+        if path.is_symlink() or not path.resolve().is_relative_to(resolved):
+            _fail("V0.2 qualification forbids links and escaped paths")
+        if path.is_dir():
+            if not any(path.iterdir()):
+                _fail("V0.2 qualification forbids unreferenced empty directories")
+            _check_tree(path)
+
+
 def stateful_source_identity(project_root: Path) -> dict[str, str]:
     """Recompute the source identity used by every V0.2 profile."""
     return cast(dict[str, str], _source_provenance(project_root)["source_identity"])
@@ -829,7 +854,7 @@ def create_stateful_profile_evidence(
     if profile_id not in FORMAL_PROFILES:
         _fail("unknown V0.2 qualification profile")
     gate_root = _fs(gate_root)
-    _check_tree(gate_root)
+    _check_gate_tree(gate_root)
     gate_root = gate_root.resolve()
     cpu = profile_id in CPU_PROFILES
     expected_gate_entries = {
@@ -841,7 +866,7 @@ def create_stateful_profile_evidence(
         "benchmark-fp16-tuning", "benchmark-fp16-heldout",
     })
     actual_gate_entries = {path.name for path in gate_root.iterdir()}
-    if not expected_gate_entries <= actual_gate_entries <= expected_gate_entries | {"pytest-temp"}:
+    if actual_gate_entries != expected_gate_entries | {"pytest-temp"}:
         _fail("V0.2 gate root inventory is not the exact predeclared profile output")
     gate_report_value = _object(gate_root / "gate-report.json")
     execution = _object(gate_root / "execution.json")

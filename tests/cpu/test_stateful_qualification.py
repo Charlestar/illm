@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
-from typing import Any, Mapping, cast
+from typing import Any, Iterator, Mapping, cast
 
 import pytest
 
@@ -438,6 +438,78 @@ def test_gate_rejects_bool_numeric_parameter_and_extra_inventory(
     (gate / "extra.txt").write_text("resigned-extra\n", encoding="utf-8")
     with pytest.raises(IllmError, match="inventory is not exact"):
         qualification._verify_gate(gate, "state-machine-cpu-v1", toolchain, identity, {})
+
+
+def test_gate_tree_excludes_only_pytest_scratch_without_traversing_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gate = tmp_path / "gate"
+    evidence = gate / "logs"
+    scratch = gate / "pytest-temp"
+    evidence.mkdir(parents=True)
+    (evidence / "phase.stdout.txt").write_text("pass\n", encoding="utf-8")
+    (scratch / "legitimate-empty-tmp-path").mkdir(parents=True)
+
+    original_iterdir = Path.iterdir
+
+    def guarded_iterdir(path: Path) -> Iterator[Path]:
+        if path == scratch:
+            raise AssertionError("pytest scratch contents must not be traversed")
+        return original_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", guarded_iterdir)
+    qualification._check_gate_tree(gate)
+
+    (gate / "unreferenced-empty-evidence").mkdir()
+    with pytest.raises(IllmError, match="empty directories"):
+        qualification._check_gate_tree(gate)
+
+
+def test_gate_tree_rejects_nonordinary_pytest_scratch_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gate = tmp_path / "gate"
+    scratch = gate / "pytest-temp"
+    scratch.mkdir(parents=True)
+    (gate / "evidence.txt").write_text("pass\n", encoding="utf-8")
+    original_is_symlink = Path.is_symlink
+
+    def scratch_is_symlink(path: Path) -> bool:
+        return path == scratch or original_is_symlink(path)
+
+    monkeypatch.setattr(Path, "is_symlink", scratch_is_symlink)
+    with pytest.raises(IllmError, match="pytest scratch"):
+        qualification._check_gate_tree(gate)
+
+
+def test_gate_tree_does_not_promote_pytest_symlink_fixture_to_evidence(tmp_path: Path) -> None:
+    gate = tmp_path / "gate"
+    scratch = gate / "pytest-temp"
+    scratch.mkdir(parents=True)
+    (gate / "evidence.txt").write_text("pass\n", encoding="utf-8")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("not evidence\n", encoding="utf-8")
+    try:
+        (scratch / "deliberate-test-symlink").symlink_to(outside)
+    except OSError:
+        pytest.skip("host does not permit creating symbolic links")
+
+    qualification._check_gate_tree(gate)
+    with pytest.raises(IllmError, match="links and escaped paths"):
+        qualification._check_tree(gate)
+
+
+def test_gate_copy_never_copies_or_hashes_pytest_scratch(tmp_path: Path) -> None:
+    gate = tmp_path / "gate"
+    _gate_report(gate, "state-machine-cpu-v1")
+    scratch = gate / "pytest-temp"
+    (scratch / "empty-test-temp").mkdir(parents=True)
+    destination = tmp_path / "sealed-gate"
+
+    qualification._copy_gate(gate / "gate-report.json", destination)
+
+    assert not (destination / "pytest-temp").exists()
+    assert "pytest-temp" not in _inventory(destination)
 
 
 def test_gate_phase_order_and_transcript_hashes_are_not_labels_only(
