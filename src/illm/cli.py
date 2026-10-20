@@ -261,9 +261,12 @@ def _generate(args: argparse.Namespace) -> int:
 
 def _release_verify(args: argparse.Namespace) -> int:
     if args.require_current_source:
-        from illm.reference_release import verify_reference_release_bundle
+        from illm.release import _artifact_json
 
-        result = verify_reference_release_bundle(
+        header = _artifact_json(args.manifest)
+        if type(header.get("schema_version")) is not int or header["schema_version"] not in {1, 2}:
+            raise IllmError(ErrorCode.UNSUPPORTED_SCHEMA, "current-source CLI verification requires release schema1 or schema2")
+        result = verify_release_bundle(
             args.manifest,
             expected_source_identity=reference_source_identity(Path.cwd()),
         )

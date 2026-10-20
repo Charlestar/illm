@@ -136,7 +136,7 @@ def test_release_cli_can_require_the_current_checkout_source(
     assert json.loads(capsys.readouterr().out)["source_bound_dispatch"] is True
 
 
-def test_current_source_flag_is_v01_only(
+def test_current_source_flag_keeps_schema0_rejection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
     from illm import reference_release

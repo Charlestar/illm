@@ -326,6 +326,10 @@ def verify_release_bundle(
     if path.is_symlink() or path.parent.is_symlink():
         raise IllmError(ErrorCode.INVALID_ARGUMENT, "release root cannot be a symlink")
     header = _artifact_json(path)
+    if type(header.get("schema_version")) is int and header["schema_version"] == 2:
+        from illm.stateful_release import verify_stateful_release_bundle
+
+        return verify_stateful_release_bundle(path, expected_source_identity=expected_source_identity)
     if type(header.get("schema_version")) is int and header["schema_version"] == 1:
         from illm.reference_release import verify_reference_release_bundle
 

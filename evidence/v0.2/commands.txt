@@ -1,0 +1,58 @@
+V0.2 release recipe -- not a record of executed commands or a release grant.
+
+Current main is 0.2.0.dev0 / unqualified. Do not use a development-only output,
+an INCOMPLETE gate, synthetic unit fixtures, or a previous version's environment
+as a release profile. The published v0.1.0 tag and bundle remain immutable.
+
+1. Finish implementation and all predeclared correctness investigations first.
+   Never widen ADR-005 tolerances, replace the V0.1 oracle, skip BF16/FP16, or
+   replace the real 256/64 workload with tiny CPU to obtain a passing profile.
+   Freeze final package version0.2.0 and implemented/unqualified SPEC metadata
+   in one commit before starting final gates. Any later source change requires
+   new environments and new output paths for every required profile.
+
+2. Fetch pinned artifacts explicitly; gate bootstrap itself is offline:
+   python scripts/fetch_runtime.py --runtime-profile v01-cpu --artifact-cache .illm/cache/runtime
+   python3 scripts/fetch_runtime.py --runtime-profile v01-cuda --artifact-cache .illm/cache/runtime
+   Use CPython3.12.14 on Windows or CPython3.12.3 on Linux, as the lock requires.
+   Large real-model assets must already be present and digest-verified locally.
+
+3. On Windows in the frozen source, run the CPU profile:
+   python scripts/run_v02_gate.py --profile v02-final-cpu --profile-id state-machine-cpu-v1 --output out/v02-final-cpu
+
+4. On Linux in an independent native-filesystem checkout of the SAME source:
+   python3 scripts/run_v02_gate.py --profile v02-final-clean --profile-id clean-room-release-v1 --output out/v02-final-clean
+   python3 scripts/run_v02_gate.py --profile v02-final-gpu --profile-id stateful-streaming-single-gpu-v1 --output out/v02-final-gpu
+   The GPU profile requires actual CUDA BF16 and FP16 smoke and all four
+   dtype/suite benchmark combinations. A failure remains INCOMPLETE.
+   Copy sealed qualification/ artifacts only; do not copy environments, weights,
+   pytest scratch, author checkout paths, or a machine's whole out/ tree.
+
+5. Rehearse rollback with scripts/rehearse_stateful_rollback.py in the finalized
+   current environment. Supply its required primary V0.2 capture and an explicit
+   --trusted-git-repository containing the immutable v0.1.0 tag. Consult --help
+   for exact required arguments. The tool runs a fresh old binary, not main's
+   compatibility API. It must prove resource reclamation, old generation/replay,
+   old bundle verification, and old-reader schema2 rejection. Preserve raw logs.
+
+6. Stage exactly five source-bound learning files in a new documentation folder:
+   commands.txt       <- evidence/v0.2/commands.txt
+   teach-back.md      <- docs/teach-back-v0.2.md
+   known-limitations.md <- docs/known-limitations-v0.2.md
+   release-notes.md    <- docs/release-notes-v0.2.md
+   spec.md            <- docs/specs/versions/v0.2-stateful-streaming.md
+   Their bytes must match the qualified source, including the frozen SPEC.
+
+7. In a finalized current environment, assemble a candidate with:
+   python scripts/build_v02_release.py --evidence-root PATH_TO_CPU_QUALIFICATION --evidence-root PATH_TO_GPU_QUALIFICATION --evidence-root PATH_TO_CLEAN_QUALIFICATION --rollback PATH_TO_COMPLETE_ROLLBACK --documentation-root PATH_TO_FIVE_DOCUMENTS --output out/v02-release-candidate
+   python -m illm release verify out/v02-release-candidate/manifest.json
+   The bundle reader revalidates every profile and derived view, not just hashes.
+   The required-capture write failure is published as capture/incomplete-exporter;
+   it remains explicitly incomplete and is not a successful optional-exporter run.
+
+8. Independently audit the copied bundle in a checkout-free, tensor-free process.
+   Confirm actual CI for the exact final commit. Review teaching diagrams and
+   limitations. Assembly alone never promotes a candidate, creates a GitHub
+   Release, or tags Git. Only after the entire release/promotion audit passes may
+   the authorized release workflow create and push an annotated v0.2.0 tag bound
+   to the final manifest digest. Never retag or rewrite a published checkpoint.
