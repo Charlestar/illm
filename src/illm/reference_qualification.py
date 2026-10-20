@@ -238,7 +238,7 @@ def _verify_toolchain(root: Path, identity: Mapping[str, str], versions: dict[st
     if any(toolchain.get(name) != identity[name] for name in ("project_root_digest", "bootstrap_digest")) or toolchain.get("lock_digest") != sha256_json({"base_lock_digest": identity["base_lock_digest"], "runtime_lock_digest": toolchain["runtime_lock_digest"]}):
         _fail("toolchain source/base/runtime lock identity mismatch", ErrorCode.TOOLCHAIN_MISMATCH)
     target = lock.get("target", {})
-    if target.get("os") != toolchain.get("os") or not str(toolchain.get("python_version", "")).startswith("3.12.") or toolchain.get("arch") not in {"AMD64", "x86_64"}:
+    if target.get("os") != toolchain.get("os") or toolchain.get("python_version") != target.get("python_validation_patch") or not str(toolchain.get("python_version", "")).startswith("3.12.") or toolchain.get("arch") not in {"AMD64", "x86_64"}:
         _fail("toolchain platform differs from pinned CPython3.12 x86_64 runtime")
     artifacts = lock.get("artifacts")
     if not isinstance(artifacts, list) or not artifacts:

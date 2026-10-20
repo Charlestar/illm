@@ -26,6 +26,7 @@
     "profile_id": {
       "enum": [
         "py312-win-amd64-cpu",
+        "py312-win-amd64-cpu-ci",
         "py312-linux-x86_64-cpu",
         "py312-linux-x86_64-cu126"
       ]
@@ -70,6 +71,7 @@
         "python_validation_patch": {
           "enum": [
             "3.12.3",
+            "3.12.10",
             "3.12.14"
           ]
         },

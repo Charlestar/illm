@@ -108,6 +108,13 @@ R0 是事件播放。R1_REFERENCE 检查并重建模型/采样 identity、请求
 数值证据来自独立 oracle 与明确公开的 golden fixture。Web UI 尚未实现，这些
 结构化事实会服务于后续可视化版本。
 
+正式 bundle 的 `screenshots/model-and-diff/` 提供两张静态 SVG 学习图：
+`model-structure.svg` 展开两层 decoder 的 shape 路径，
+`first-divergence.svg` 并列展示纯转置与复合故障的实际结果。它们是从已验证的
+spec、storage manifest 和 numerical reports 派生的图，不是 UI 截屏，也不是
+额外执行模型得到的新结论。`provenance.json` 记录输入和输出哈希；portable
+reader 会根据原始事实重新生成并逐字节比较，不能只更换图片后重签 checksum。
+
 ## 7. 自检问题
 
 1. 为什么 vocabulary projection 的输出最后一维是259，而不是32？

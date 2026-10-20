@@ -9,6 +9,10 @@
       "artifact_lock": "runtime/artifacts/py312-win-amd64-cpu.json",
       "lock_digest": "5149ad41ff2e0f261fbec8fe11dcefe2bed90ab8431b1c5339b8e08b59320a34"
     },
+    "py312-win-amd64-cpu-ci": {
+      "artifact_lock": "runtime/artifacts/py312-win-amd64-cpu-ci.json",
+      "lock_digest": "b22b22b9e289b7cdb1577ba624e5c24a6e392a64ca30165f67910fe7c3e3786d"
+    },
     "py312-linux-x86_64-cpu": {
       "artifact_lock": "runtime/artifacts/py312-linux-x86_64-cpu.json",
       "lock_digest": "e0e40645e6e54f053b08587c030331f665e5cf648143f846b284960e09f4d799"

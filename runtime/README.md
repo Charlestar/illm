@@ -12,6 +12,20 @@
 Windows 的锁定解释器为 CPython 3.12.14，Ubuntu 的为 CPython 3.12.3。
 `v01-cpu` 根据当前操作系统选择对应 profile；版本不符会明确拒绝，不会静默换版本。
 
+GitHub-hosted Windows development CI uses a separate explicit
+`py312-win-amd64-cpu-ci` profile with official CPython 3.12.10. The
+[Actions Python manifest](https://github.com/actions/python-versions/blob/main/versions-manifest.json)
+does not provide a Windows 3.12.14 binary. This CI-only profile
+keeps the same 25 runtime wheel bytes, versions and dependency closure, but has
+its own target, marker environment and lock digest. It does not change the
+`v01-cpu` alias or the exact 3.12.14 Windows qualification environment.
+
+The CI-only profile runs independent development tests and portable release
+evidence readers; it is not in the three-profile release runtime whitelist and
+cannot seal or grant a V0.1 release qualification. Its package compatibility is
+not proof that 3.12.10 executed the formal 3.12.14 qualification. Actual CI
+installation/import/test results must be checked separately from the lock.
+
 ```sh
 python scripts/fetch_runtime.py --runtime-profile v01-cpu
 python scripts/bootstrap.py --profile v01-dev --runtime-profile v01-cpu --locked --offline --write-manifest out/v0.1/toolchain.json

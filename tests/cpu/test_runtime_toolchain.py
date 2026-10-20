@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import email
 from pathlib import Path
 import platform
 import shutil
@@ -11,6 +12,11 @@ from typing import Any
 import zipfile
 
 import pytest
+from packaging.requirements import Requirement
+from packaging.specifiers import SpecifierSet
+from packaging.tags import compatible_tags, cpython_tags
+from packaging.utils import parse_wheel_filename
+from packaging.version import Version
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -29,6 +35,7 @@ def _resign(value: dict[str, Any]) -> None:
 
 @pytest.mark.parametrize("profile_id,count", [
     ("py312-win-amd64-cpu", 25),
+    ("py312-win-amd64-cpu-ci", 25),
     ("py312-linux-x86_64-cpu", 25),
     ("py312-linux-x86_64-cu126", 40),
 ])
@@ -42,6 +49,72 @@ def test_runtime_profiles_pin_each_wheel_and_match_shared_authority(profile_id: 
     assert expected["packaging"] == "26.3"
     assert expected["torch"] == "2.8.0+" + lock["target"]["torch_channel"]
     assert common.lock_digest(ROOT, lock) != common.lock_digest(ROOT)
+
+
+def test_ci_only_windows_profile_reuses_identical_wheels_with_unchanged_dependency_closure() -> None:
+    formal = runtime.load_runtime_lock(ROOT, "py312-win-amd64-cpu")
+    ci = runtime.load_runtime_lock(ROOT, "py312-win-amd64-cpu-ci")
+    assert ci["target"]["python_validation_patch"] == "3.12.10"
+    assert formal["target"]["python_validation_patch"] == "3.12.14"
+    assert ci["marker_environment"]["implementation_version"] == "3.12.10"
+    assert ci["marker_environment"]["python_full_version"] == "3.12.10"
+    assert ci["artifacts"] == formal["artifacts"]
+    assert ci["roots"] == formal["roots"]
+    assert ci["dependency_edges"] == formal["dependency_edges"]
+    assert ci["lock_digest"] != formal["lock_digest"]
+    assert formal["lock_digest"] == "5149ad41ff2e0f261fbec8fe11dcefe2bed90ab8431b1c5339b8e08b59320a34"
+    version = Version("3.12.10")
+    supported = set(cpython_tags((3, 12), abis=["cp312"], platforms=["win_amd64"]))
+    supported.update(compatible_tags((3, 12), "cp312", ["win_amd64"]))
+    selected = runtime.runtime_packages(ci)
+    edges: list[dict[str, str]] = []
+    for artifact in ci["artifacts"]:
+        assert not artifact["requires_python"] or version in SpecifierSet(artifact["requires_python"])
+        assert parse_wheel_filename(artifact["filename"])[3] & supported
+        for raw in artifact["requires_dist"]:
+            requirement = Requirement(raw)
+            original_active = requirement.marker is None or requirement.marker.evaluate(formal["marker_environment"])
+            active = requirement.marker is None or requirement.marker.evaluate(ci["marker_environment"])
+            assert active == original_active
+            if active:
+                name = common.normalize_distribution_name(requirement.name)
+                assert name in selected
+                assert Version(selected[name]) in requirement.specifier
+                edges.append({"from": artifact["name"], "requirement": raw, "to": name})
+    for raw in ci["roots"]:
+        requirement = Requirement(raw)
+        name = common.normalize_distribution_name(requirement.name)
+        assert Version(selected[name]) in requirement.specifier
+        edges.append({"from": "root", "requirement": raw, "to": name})
+    assert len(edges) == 36
+    assert sorted((edge["from"], edge["requirement"], edge["to"]) for edge in edges) == sorted(
+        (edge["from"], edge["requirement"], edge["to"]) for edge in ci["dependency_edges"])
+    vendor = sorted((ROOT / "vendor" / "wheels").glob("*.whl"))
+    assert len(vendor) == 13
+    for path in vendor:
+        assert parse_wheel_filename(path.name)[3] & supported
+        with zipfile.ZipFile(path) as wheel:
+            metadata_names = [name for name in wheel.namelist() if name.count("/") == 1 and name.endswith(".dist-info/METADATA")]
+            assert len(metadata_names) == 1
+            metadata = email.message_from_bytes(wheel.read(metadata_names[0]))
+        requires_python = metadata.get("Requires-Python")
+        assert requires_python is None or version in SpecifierSet(requires_python)
+
+
+def test_ci_only_runtime_does_not_replace_formal_alias_or_exact_python_patch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    monkeypatch.setattr(platform, "machine", lambda: "AMD64")
+    formal = runtime.load_runtime_lock(ROOT, "v01-cpu")
+    ci = runtime.load_runtime_lock(ROOT, "py312-win-amd64-cpu-ci")
+    assert formal["profile_id"] == "py312-win-amd64-cpu"
+    monkeypatch.setattr(platform, "python_version", lambda: "3.12.10")
+    runtime.verify_runtime_host(ci)
+    with pytest.raises(common.ToolchainFailure, match="host identity mismatch"):
+        runtime.verify_runtime_host(formal)
+    monkeypatch.setattr(platform, "python_version", lambda: "3.12.14")
+    runtime.verify_runtime_host(formal)
+    with pytest.raises(common.ToolchainFailure, match="host identity mismatch"):
+        runtime.verify_runtime_host(ci)
 
 
 def test_resealed_runtime_lock_cannot_change_registry_authority(tmp_path: Path) -> None:

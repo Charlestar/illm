@@ -255,6 +255,29 @@ def test_reference_profile_roundtrip_is_portable_and_source_bound(sealed: Path, 
     assert raised.value.code is ErrorCode.TOOLCHAIN_MISMATCH
 
 
+def test_ci_only_runtime_cannot_grant_formal_release_qualification(sealed: Path) -> None:
+    assert set(RUNTIME_LOCKS) == {"py312-win-amd64-cpu", "py312-linux-x86_64-cpu", "py312-linux-x86_64-cu126"}
+    ci = _read(ROOT / "runtime" / "artifacts" / "py312-win-amd64-cpu-ci.json")
+    path = sealed / "toolchain.json"
+    toolchain = _read(path)
+    toolchain.update(runtime_profile_id=ci["profile_id"], runtime_lock_digest=ci["lock_digest"], python_version="3.12.10")
+    _signed(path, toolchain, "manifest_digest")
+    _resign(sealed)
+    with pytest.raises(IllmError, match="runtime profile/lock is not pinned by V0.1") as raised:
+        verify_reference_profile_evidence(sealed)
+    assert raised.value.code is ErrorCode.TOOLCHAIN_MISMATCH
+
+
+def test_formal_qualification_rejects_resigned_wrong_python_patch(sealed: Path) -> None:
+    path = sealed / "toolchain.json"
+    toolchain = _read(path)
+    toolchain["python_version"] = "3.12.10"
+    _signed(path, toolchain, "manifest_digest")
+    _resign(sealed)
+    with pytest.raises(IllmError, match="platform differs from pinned CPython3.12"):
+        verify_reference_profile_evidence(sealed)
+
+
 @pytest.mark.parametrize("mutation", ["partial", "checksum", "extra", "missing", "path-traversal", "status-only", "gpu-label", "runtime", "mypy", "skipped-critical", "no-greedy", "token-mismatch", "loose-tolerance", "missing-op", "bad-fault", "sampler", "median", "capture-reuse", "bool-schema", "shape", "oracle-contract", "fake-gpu-oom", "unreferenced-resigned", "fake-final-package", "masked-nonfinite"])
 def test_resigned_incomplete_or_semantically_invalid_profile_is_rejected(sealed: Path, mutation: str) -> None:
     if mutation == "partial":

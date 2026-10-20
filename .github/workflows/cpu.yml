@@ -40,10 +40,12 @@ jobs:
         include:
           - os: windows-latest
             profile: v01-ci-windows
-            python: "3.12.14"
+            python: "3.12.10"
+            runtime: py312-win-amd64-cpu-ci
           - os: ubuntu-latest
             profile: v01-ci-linux
             python: "3.12.3"
+            runtime: py312-linux-x86_64-cpu
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -51,9 +53,9 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Fetch and hash-verify the selected CPU runtime wheels
-        run: python scripts/fetch_runtime.py --runtime-profile v01-cpu --artifact-cache .illm/cache/runtime
+        run: python scripts/fetch_runtime.py --runtime-profile ${{ matrix.runtime }} --artifact-cache .illm/cache/runtime
       - name: Bootstrap locked environment without network resolution
-        run: python scripts/bootstrap.py --profile ${{ matrix.profile }} --runtime-profile v01-cpu --locked --offline --write-manifest out/v0.1/toolchain.json --write-manifest-digest out/v0.1/toolchain.sha256
+        run: python scripts/bootstrap.py --profile ${{ matrix.profile }} --runtime-profile ${{ matrix.runtime }} --locked --offline --write-manifest out/v0.1/toolchain.json --write-manifest-digest out/v0.1/toolchain.sha256
       - name: CPU, model and fault-injection tests
         run: python scripts/in_env.py --manifest out/v0.1/toolchain.json --expected-manifest-digest-file out/v0.1/toolchain.sha256 -- python -m pytest tests --junitxml out/v0.1/junit.xml
       - name: Static quality and annotation gate
