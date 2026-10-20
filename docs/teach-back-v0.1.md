@@ -1,8 +1,9 @@
 # V0.1：从 token 到下一个 token
 
-本文对应正在开发的 Reference Runner，不是已发布声明。稳定的上一版本是
-`v0.0.0`；V0.1 的发布资格以 [SPEC](specs/versions/v0.1-reference-runner.md)
-和最终 evidence 为准。
+本文对应 V0.1 Reference Runner 学习检查点，不是独立发布证明。上一版本是
+`v0.0.0`；只有远端 `v0.1.0` tag 与完整、可验证的 evidence 同时存在，才代表
+本版已发布。文档会在最终门禁前冻结，发布要求见
+[SPEC](specs/versions/v0.1-reference-runner.md)。
 
 ## 1. 先建立正确预期
 
@@ -114,6 +115,12 @@ R0 是事件播放。R1_REFERENCE 检查并重建模型/采样 identity、请求
 spec、storage manifest 和 numerical reports 派生的图，不是 UI 截屏，也不是
 额外执行模型得到的新结论。`provenance.json` 记录输入和输出哈希；portable
 reader 会根据原始事实重新生成并逐字节比较，不能只更换图片后重签 checksum。
+
+测试报告也有同样的边界：测试进程返回成功，不代表汇总数字可以直接用作发布证据。
+锁定的 pytest 对 unittest 子测试曾出现“汇总已计数、XML 条目被合并”的问题。
+仓库的窄适配器为每个真实执行的子测试保留独立 JUnit 条目，失败和 skip 也原样
+保留；发布读端仍要求汇总与逐项事实一致，并且不能有失败。没有通过这项检查的
+旧预检会保留失败日志，但不会被提升成正式资格。
 
 ## 7. 自检问题
 

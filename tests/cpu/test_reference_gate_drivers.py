@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 import subprocess
 import sys
@@ -14,6 +15,7 @@ import torch
 
 from illm.canonical import sha256_file, sha256_json
 from illm.domain.errors import ErrorCode, IllmError
+from illm.engine import GenerationRequest, GenerationResult
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -111,6 +113,17 @@ def _manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ILLM_ENVIRONMENT_ID", "synthetic-driver-unit")
 
 
+def _synthetic_result(request: GenerationRequest, duration: int = 100) -> GenerationResult:
+    assert request.input_token_ids is not None
+    sampled = request.sampling.mode == "sample"
+    return GenerationResult(request.request_id, request.input_token_ids, (3,), "synthetic unit fixture", "MAX_NEW_TOKENS",
+                            request.sampling.actual_seed, "synthetic-driver-unit", request.sampling.digest, 1, int(sampled),
+                            ((0, 0, 0),) if sampled else (),
+                            {"server_full_context_forward_wall_time_ns": duration,
+                             "logits_host_export_wall_time_ns": 3, "sampling_wall_time_ns": 5,
+                             "total_request_wall_time_ns": duration + 50}, "c" * 64, 8)
+
+
 def test_benchmark_keeps_all_observations_and_restores_runtime_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -127,14 +140,12 @@ def test_benchmark_keeps_all_observations_and_restores_runtime_state(
         def __init__(self, model: str, *, device: str) -> None:
             pass
 
-        def generate(self, request: Any) -> SimpleNamespace:
+        def generate(self, request: GenerationRequest) -> GenerationResult:
             requests.append(request)
             # A large outlier remains in the report; MAD is recomputed without
             # filtering or changing this predeclared stability rule.
             duration = 1_000_000 if request.request_id.endswith("-6") else 100
-            return SimpleNamespace(output_token_ids=(3,), capture_manifest_digest="c" * 64,
-                                   timings={"server_full_context_forward_wall_time_ns": duration,
-                                            "total_request_wall_time_ns": duration + 50})
+            return _synthetic_result(request, duration)
 
         def close(self) -> None:
             closed.append(True)
@@ -143,7 +154,7 @@ def test_benchmark_keeps_all_observations_and_restores_runtime_state(
     before = (torch.get_num_threads(), torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32)
     report = benchmark.run_benchmark("fixture:tiny-decoder", device="cpu", output=tmp_path / "benchmark")
     assert report["status"] == "pass" and report["speedup_claim"] is None
-    assert len(requests) == 3 * (3 + 7) and closed == [True]
+    assert len(requests) == 3 * (3 + 3 + 7) and closed == [True]
     assert report["measurement_contract"]["cpu_peak_memory_measured"] is False
     for bucket in report["context_buckets"]:
         assert len(bucket["observations"]) == 7
@@ -152,9 +163,64 @@ def test_benchmark_keeps_all_observations_and_restores_runtime_state(
         assert bucket["max_forward_wall_time_ns"] == 1_000_000
         assert bucket["relative_median_absolute_deviation"] == 0.0
         assert all(observation["peak_device_allocated_bytes"] is None for observation in bucket["observations"])
+        assert all(observation["logits_host_export_wall_time_ns"] == 3 and observation["sampling_wall_time_ns"] == 5
+                   for observation in bucket["observations"])
+    invariance = report["telemetry_invariance"]
+    assert invariance["status"] == "pass" and invariance["modes"] == ["off", "request", "ops"]
+    assert [request.telemetry for request in requests[:9]] == ["off", "request", "ops"] * 3
+    assert all(request.request_id.startswith("telemetry-") for request in requests[:9])
+    for bucket in invariance["context_buckets"]:
+        assert [outcome["telemetry"] for outcome in bucket["outcomes"]] == ["off", "request", "ops"]
+        assert len({outcome["generation_result_digest"] for outcome in bucket["outcomes"]}) == 1
+        result = bucket["outcomes"][0]["generation_result"]
+        assert result["rng_draws_consumed"] == 1 and result["committed_draw_addresses"] == [[0, 0, 0]]
     assert before == (torch.get_num_threads(), torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32)
     assert all(request.max_new_tokens == 1 for request in requests)
     assert not (tmp_path / "benchmark" / "INCOMPLETE").exists()
+
+
+@pytest.mark.parametrize("field,value", [
+    ("input_token_ids", (5,)), ("output_token_ids", (4,)), ("finish_reason", "EOS"), ("actual_seed", 8),
+    ("sampling_spec_digest", "d" * 64), ("next_output_position", 2), ("rng_draws_consumed", 2),
+    ("committed_draw_addresses", ((0, 0, 1),)),
+])
+def test_telemetry_mismatch_stops_before_timing_and_leaves_failed_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, field: str, value: Any,
+) -> None:
+    _manifest(tmp_path, monkeypatch)
+    monkeypatch.setattr(benchmark, "inspect_model", lambda model: {
+        "max_context_tokens": 128, "spec": {"vocab_size": 259}, "weight_manifest": {"weights_digest": "b" * 64}})
+    requests: list[GenerationRequest] = []
+    closed: list[bool] = []
+
+    class FaultyEngine:
+        device = "cpu"
+        model_spec_id = "synthetic-driver-unit"
+
+        def __init__(self, model: str, *, device: str) -> None:
+            pass
+
+        def generate(self, request: GenerationRequest) -> GenerationResult:
+            requests.append(request)
+            result = _synthetic_result(request)
+            return replace(result, **{field: value}) if request.telemetry == "ops" else result
+
+        def close(self) -> None:
+            closed.append(True)
+
+    monkeypatch.setattr(benchmark, "Engine", FaultyEngine)
+    output = tmp_path / "failed-baseline"
+    with pytest.raises(IllmError) as raised:
+        benchmark.run_benchmark("fixture:tiny-decoder", device="cpu", output=output)
+    assert raised.value.code is ErrorCode.NUMERICAL_ERROR
+    assert len(requests) == 3 and closed == [True]
+    assert all(request.request_id == "telemetry-8" for request in requests)
+    assert (output / "INCOMPLETE").exists() and not (output / "COMPLETE").exists()
+    assert not (output / "benchmark-report.json").exists()
+    failure = json.loads((output / "telemetry-invariance-failure.json").read_text(encoding="utf-8"))
+    assert failure["status"] == "fail" and failure["performance_outcome"] == "not_evaluated"
+    assert failure["speedup_claim"] is None and failure["bottleneck_claim"] is None
+    assert failure["telemetry_invariance"]["status"] == "fail"
 
 
 def test_benchmark_rejects_output_file_before_model_allocation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

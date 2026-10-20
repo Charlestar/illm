@@ -3,11 +3,13 @@
 Each completed version has an annotated immutable tag, a runnable demo, a
 Version SPEC, a teach-back, and a verified evidence bundle. Work toward later
 versions stays visible on `main`; a planned version has no release tag.
+The table names intended checkpoints; verify the remote tag and bundle before
+treating a source tree or its prepared release metadata as published.
 
 | Checkpoint | New concept | Tag / progress | Reading |
 |---|---|---|---|
 | V0.0 | Facts, deterministic scheduling, capture and replay | `v0.0.0` | [SPEC](../specs/versions/v0.0-bootstrap-lab.md), [teach-back](../teach-back-v0.0.md) |
-| V0.1 | Transformer forward, weights and canonical sampling | in development; no tag | [SPEC](../specs/versions/v0.1-reference-runner.md), [status](../implementation/v0.1-status.md) |
+| V0.1 | Transformer forward, weights and canonical sampling | `v0.1.0` (when verified tag/bundle are present) | [SPEC](../specs/versions/v0.1-reference-runner.md), [evidence guide](../implementation/v0.1-status.md), [teach-back](../teach-back-v0.1.md) |
 | V0.2–V0.8 | KV, streaming, batching, pages, preemption, chunks, prefix and visual replay | planned; no tags | [release train](../specs/README.md) |
 | V1.0–V3.1 | Stable single GPU, performance experiments, distributed execution and operations | planned; no tags | [project plan](../../AI_INFERENCE_ENGINE_PROJECT_PLAN.md) |
 

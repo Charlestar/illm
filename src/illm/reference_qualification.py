@@ -503,6 +503,63 @@ def _capture(root: Path, validation: Mapping[str, Any]) -> ReferenceCaptureBundl
     return bundle
 
 
+_TELEMETRY_RESULT_FIELDS = ("input_token_ids", "output_token_ids", "finish_reason", "actual_seed", "sampling_spec_digest",
+                            "next_output_position", "rng_draws_consumed", "committed_draw_addresses")
+
+
+def _verify_telemetry_invariance(directory: Path, value: Any, validation: Mapping[str, Any], lengths: set[int]) -> set[str]:
+    expected_spec = SamplingSpec(mode="sample", temperature=0.8, top_k=50, top_p=0.9, actual_seed=7)
+    fields = {"schema_version", "status", "evidence_kind", "scope", "token_id_disclosure", "modes", "comparison_fields",
+              "sampling_spec", "sampling_spec_digest", "context_buckets"}
+    if not isinstance(value, dict) or set(value) != fields or type(value.get("schema_version")) is not int or value["schema_version"] != 1 or value.get("status") != "pass" or value.get("evidence_kind") != "measured" or value.get("scope") != "fixed-public-synthetic-context-fixtures-only" or value.get("token_id_disclosure") != "public-synthetic-fixture-results-only; captures-remain-metadata-only" or value.get("modes") != ["off", "request", "ops"] or value.get("comparison_fields") != list(_TELEMETRY_RESULT_FIELDS) or value.get("sampling_spec") != expected_spec.to_dict() or value.get("sampling_spec_digest") != expected_spec.digest:
+        _fail("benchmark omits the executed sampled telemetry-invariance contract")
+    buckets = value.get("context_buckets")
+    if not isinstance(buckets, list) or len(buckets) != len(lengths):
+        _fail("telemetry invariance omits benchmark context fixtures")
+    seen: set[int] = set()
+    referenced: set[str] = set()
+    for bucket in buckets:
+        length = bucket.get("context_tokens")
+        outcomes = bucket.get("outcomes")
+        if set(bucket) != {"context_tokens", "public_input_fixture_id", "status", "outcomes"} or type(length) is not int or length not in lengths or length in seen or bucket.get("status") != "pass" or not isinstance(outcomes, list) or len(outcomes) != 3:
+            _fail("telemetry-invariance context coverage is invalid")
+        seen.add(length)
+        ids = [3 + index % (validation["spec"].vocab_size - 3) for index in range(length)]
+        if bucket.get("public_input_fixture_id") != sha256_json({"schema_version": 1, "kind": "ascending-vocab-v1", "input_ids": ids}):
+            _fail("telemetry-invariance public input identity is invalid")
+        common: bytes | None = None
+        for mode, outcome in zip(("off", "request", "ops"), outcomes, strict=True):
+            expected_fields = {"telemetry", "request_id", "generation_result", "generation_result_digest", "capture", "capture_manifest_digest"}
+            if not isinstance(outcome, dict) or set(outcome) != expected_fields or outcome.get("telemetry") != mode or outcome.get("request_id") != f"telemetry-{length}":
+                _fail("telemetry-invariance mode invocation is missing or duplicated")
+            result = outcome.get("generation_result")
+            if not isinstance(result, dict) or set(result) != set(_TELEMETRY_RESULT_FIELDS) or outcome.get("generation_result_digest") != sha256_json(result):
+                _fail("telemetry-invariance public result fields/checksum are invalid")
+            tokens = result.get("output_token_ids")
+            if result.get("input_token_ids") != ids or not isinstance(tokens, list) or len(tokens) != 1 or any(type(token) is not int or not 0 <= token < validation["spec"].vocab_size for token in tokens) or type(result.get("actual_seed")) is not int or result["actual_seed"] != 7 or result.get("sampling_spec_digest") != expected_spec.digest or type(result.get("next_output_position")) is not int or result["next_output_position"] != 1 or type(result.get("rng_draws_consumed")) is not int or result["rng_draws_consumed"] != 1 or canonical_json_bytes(result.get("committed_draw_addresses")) != b"[[0,0,0]]":
+                _fail("telemetry-invariance result changes input/seed/spec/RNG accounting")
+            expected_finish = "EOS" if tokens[0] == validation["spec"].eos_token_id else "MAX_NEW_TOKENS"
+            if result.get("finish_reason") != expected_finish:
+                _fail("telemetry-invariance result finish reason disagrees with its public token")
+            encoded = canonical_json_bytes(result)
+            if common is not None and encoded != common:
+                _fail("telemetry changed a public fixture generation result")
+            common = encoded
+            link = _relative(outcome.get("capture"))
+            if link != f"telemetry-invariance/context-{length}/{mode}":
+                _fail("telemetry-invariance capture mode/fixture link is invalid")
+            capture = _capture(directory / link, validation)
+            state = capture.final_state
+            if capture.manifest["manifest_digest"] != outcome.get("capture_manifest_digest") or capture.manifest["sampling_spec"] != expected_spec.to_dict() or state["request_id"] != outcome["request_id"] or state["input_tokens"] != length or state["max_new_tokens"] != 1 or state["output_tokens"] != 1 or state["finish_reason"] != result["finish_reason"] or any(state[name] != result[name] for name in ("sampling_spec_digest", "next_output_position", "rng_draws_consumed", "committed_draw_addresses")):
+                _fail("telemetry-invariance result does not bind replayable capture controls")
+            operations = [event for event in capture.events if event.kind is K.MODEL_OP]
+            expected_ops = _op_order(validation["spec"].num_layers) if mode == "ops" else []
+            if [event.payload["op_name"] for event in operations] != expected_ops or any(event.payload["output_position"] != 0 or list(event.payload["shape"]) != _canonical_shape(event.payload["op_name"], validation["spec"], length) for event in operations):
+                _fail("telemetry-invariance capture does not execute its declared op detail mode")
+            referenced.update(f"{link}/{name}" for name in CAPTURE_FILES)
+    return referenced
+
+
 def _verify_benchmark(directory: Path, toolchain: Mapping[str, Any], validation: Mapping[str, Any]) -> None:
     files = _inventory(directory)
     checksums = _hash_map(_object(directory / "checksums.json"))
@@ -525,6 +582,8 @@ def _verify_benchmark(directory: Path, toolchain: Mapping[str, Any], validation:
     warmups, repetitions = contract.get("warmups_per_bucket"), contract.get("repetitions_per_bucket")
     if type(warmups) is not int or warmups < 1 or type(repetitions) is not int or repetitions < 3 or contract.get("output_tokens_per_repetition") != 1 or contract.get("clock") != "perf_counter_ns" or contract.get("tf32_enabled") is not False or contract.get("telemetry") != "request" or contract.get("synchronization") != ("cuda_device_boundary" if gpu else "synchronous_cpu") or contract.get("cpu_peak_memory_measured") is not False or contract.get("load_time_excluded") is not True or contract.get("stability_rule") != "relative_median_absolute_deviation<=0.20; no observations discarded":
         _fail("benchmark measurement contract is incomplete")
+    if contract.get("partial_timing_spans_are_total_overhead") is not False or contract.get("telemetry_invariance_is_timing_comparison") is not False:
+        _fail("benchmark must distinguish partial timing spans and output invariance from overhead claims")
     buckets = report.get("context_buckets")
     if not isinstance(buckets, list) or len(buckets) < 3:
         _fail("benchmark requires three distinct context buckets")
@@ -544,6 +603,10 @@ def _verify_benchmark(directory: Path, toolchain: Mapping[str, Any], validation:
             duration, total = observation.get("server_full_context_forward_wall_time_ns"), observation.get("total_request_wall_time_ns")
             if observation.get("repetition") != index or type(observation.get("repetition")) is not int or observation.get("context_tokens") != length or observation.get("output_tokens") != 1 or type(duration) is not int or duration < 1 or type(total) is not int or total < duration:
                 _fail("benchmark observation timing/count is invalid")
+            if any(type(observation.get(name)) is not int or not 0 <= observation[name] <= total for name in ("logits_host_export_wall_time_ns", "sampling_wall_time_ns")):
+                _fail("benchmark must retain nonnegative integer host-export and sampling timing spans")
+            if duration + observation["logits_host_export_wall_time_ns"] + observation["sampling_wall_time_ns"] > total:
+                _fail("benchmark nonoverlapping partial timing spans exceed the total request duration")
             times.append(duration)
             link = _relative(observation.get("capture"))
             if any(f"{link}/{name}" in referenced for name in CAPTURE_FILES):
@@ -563,6 +626,7 @@ def _verify_benchmark(directory: Path, toolchain: Mapping[str, Any], validation:
         relative_mad = float(statistics.median([abs(value - median) for value in times])) / median
         if bucket.get("median_forward_wall_time_ns") != median or bucket.get("min_forward_wall_time_ns") != min(times) or bucket.get("max_forward_wall_time_ns") != max(times) or bucket.get("relative_median_absolute_deviation") != relative_mad or relative_mad > 0.20 or bucket.get("stability") != "pass":
             _fail("benchmark aggregates/stability do not recompute from all observations")
+    referenced.update(_verify_telemetry_invariance(directory, report.get("telemetry_invariance"), validation, lengths))
     if set(files) != referenced:
         _fail("benchmark contains unreferenced or missing capture artifacts")
 

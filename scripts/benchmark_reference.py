@@ -17,9 +17,13 @@ from typing import Any, Sequence
 
 from illm.canonical import canonical_json_bytes, sha256_file, sha256_json
 from illm.domain.errors import ErrorCode, IllmError
-from illm.engine import Engine, GenerationRequest
+from illm.engine import Engine, GenerationRequest, GenerationResult
 from illm.model import inspect_model
 from illm.sampling import SamplingSpec
+
+
+INVARIANCE_FIELDS = ("input_token_ids", "output_token_ids", "finish_reason", "actual_seed", "sampling_spec_digest",
+                     "next_output_position", "rng_draws_consumed", "committed_draw_addresses")
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
@@ -27,6 +31,14 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_bytes(canonical_json_bytes(value) + b"\n")
     temporary.replace(path)
+
+
+def _public_fixture_outcome(result: GenerationResult) -> dict[str, Any]:
+    # Only these fixed, public synthetic fixtures disclose token IDs in this
+    # benchmark report. Ordinary captures remain metadata-only with private
+    # per-request HMACs; this is not a change to the capture privacy contract.
+    public = result.to_dict()
+    return {name: public[name] for name in INVARIANCE_FIELDS}
 
 
 def run_benchmark(model: str, *, device: str, output: Path, contexts: tuple[int, ...] = (8, 32, 128),
@@ -73,12 +85,50 @@ def run_benchmark(model: str, *, device: str, output: Path, contexts: tuple[int,
             properties = torch.cuda.get_device_properties(engine.device)
             hardware.update(name=properties.name, total_device_memory_bytes=properties.total_memory,
                             compute_capability=[properties.major, properties.minor], cuda_runtime=torch.version.cuda)
-        buckets: list[dict[str, Any]] = []
+        fixtures: list[tuple[int, tuple[int, ...], str]] = []
         for length in contexts:
             # Public synthetic fixture, no user's prompt. One committed output
             # guarantees equal forward count even if the chosen token is EOS.
             ids = tuple(3 + (index % (inspected["spec"]["vocab_size"] - 3)) for index in range(length))
             fixture_id = sha256_json({"schema_version": 1, "kind": "ascending-vocab-v1", "input_ids": ids})
+            fixtures.append((length, ids, fixture_id))
+        invariance_sampling = SamplingSpec(mode="sample", temperature=0.8, top_k=50, top_p=0.9, actual_seed=7)
+        invariance: dict[str, Any] = {
+            "schema_version": 1, "status": "pass", "evidence_kind": "measured",
+            "scope": "fixed-public-synthetic-context-fixtures-only",
+            "token_id_disclosure": "public-synthetic-fixture-results-only; captures-remain-metadata-only",
+            "modes": ["off", "request", "ops"], "comparison_fields": list(INVARIANCE_FIELDS),
+            "sampling_spec": invariance_sampling.to_dict(), "sampling_spec_digest": invariance_sampling.digest,
+            "context_buckets": [],
+        }
+        # All invariance checks finish before the first timing warmup or measured
+        # repetition. Sampled decoding exercises the RNG, not only greedy's zero
+        # draw case. Every mode receives exactly the same opaque request ID.
+        for length, ids, fixture_id in fixtures:
+            outcomes: list[dict[str, Any]] = []
+            for mode in ("off", "request", "ops"):
+                capture = output / "telemetry-invariance" / f"context-{length}" / mode
+                result = engine.generate(GenerationRequest(model=model, input_token_ids=ids, max_new_tokens=1,
+                                                           sampling=invariance_sampling, telemetry=mode,
+                                                           request_id=f"telemetry-{length}", capture=capture))
+                public_result = _public_fixture_outcome(result)
+                outcomes.append({"telemetry": mode, "request_id": result.request_id, "generation_result": public_result,
+                                 "generation_result_digest": sha256_json(public_result),
+                                 "capture": capture.relative_to(output).as_posix(),
+                                 "capture_manifest_digest": result.capture_manifest_digest})
+            equal = all(item["generation_result"] == outcomes[0]["generation_result"] for item in outcomes[1:])
+            invariance["context_buckets"].append({"context_tokens": length, "public_input_fixture_id": fixture_id,
+                                                 "status": "pass" if equal else "fail", "outcomes": outcomes})
+            if not equal:
+                invariance["status"] = "fail"
+                failure = {"schema_version": 1, "status": "fail", "phase": "telemetry_invariance",
+                           "performance_outcome": "not_evaluated", "speedup_claim": None, "bottleneck_claim": None,
+                           "telemetry_invariance": invariance}
+                failure["report_digest"] = sha256_json(failure)
+                _atomic_json(output / "telemetry-invariance-failure.json", failure)
+                raise IllmError(ErrorCode.NUMERICAL_ERROR, "telemetry changed a public fixture generation outcome; baseline was not evaluated")
+        buckets: list[dict[str, Any]] = []
+        for length, ids, fixture_id in fixtures:
             for index in range(warmups):
                 engine.generate(GenerationRequest(model=model, input_token_ids=ids, max_new_tokens=1,
                                                    sampling=SamplingSpec(actual_seed=7), telemetry="off",
@@ -97,6 +147,8 @@ def run_benchmark(model: str, *, device: str, output: Path, contexts: tuple[int,
                 observations.append({
                     "repetition": index, "context_tokens": length, "output_tokens": len(result.output_token_ids),
                     "server_full_context_forward_wall_time_ns": result.timings["server_full_context_forward_wall_time_ns"],
+                    "logits_host_export_wall_time_ns": result.timings["logits_host_export_wall_time_ns"],
+                    "sampling_wall_time_ns": result.timings["sampling_wall_time_ns"],
                     "total_request_wall_time_ns": result.timings["total_request_wall_time_ns"],
                     "peak_device_allocated_bytes": torch.cuda.max_memory_allocated(engine.device) if gpu else None,
                     "peak_device_reserved_bytes": torch.cuda.max_memory_reserved(engine.device) if gpu else None,
@@ -119,7 +171,10 @@ def run_benchmark(model: str, *, device: str, output: Path, contexts: tuple[int,
                                      "output_tokens_per_repetition": 1, "clock": "perf_counter_ns", "tf32_enabled": False,
                                      "telemetry": "request", "synchronization": "cuda_device_boundary" if gpu else "synchronous_cpu",
                                      "stability_rule": "relative_median_absolute_deviation<=0.20; no observations discarded",
+                                     "partial_timing_spans_are_total_overhead": False,
+                                     "telemetry_invariance_is_timing_comparison": False,
                                      "cpu_peak_memory_measured": False, "load_time_excluded": True},
+            "telemetry_invariance": invariance,
             "context_buckets": buckets,
         }
         report["report_digest"] = sha256_json(report)

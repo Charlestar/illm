@@ -47,16 +47,24 @@ def _read(path: Path) -> dict[str, Any]:
     return value
 
 
-def _capture(path: Path, identity: dict[str, Any], request_id: str, length: int) -> dict[str, Any]:
-    spec = SamplingSpec(actual_seed=7)
+def _capture(path: Path, identity: dict[str, Any], request_id: str, length: int, *, sampling: SamplingSpec | None = None,
+             ops: bool = False) -> dict[str, Any]:
+    spec = sampling or SamplingSpec(actual_seed=7)
     session = ReferenceCaptureSession(path, identity, request_id, spec.to_dict())
     session.emit(K.REQUEST_ACCEPTED, {"max_new_tokens": 1})
     session.emit(K.REQUEST_TOKENIZED, {"input_tokens": length, "input_digest": "a" * 64})
     session.emit(K.MODEL_FORWARD_STARTED, {"output_position": 0, "context_tokens": length})
+    if ops:
+        raw = _read(ROOT / "fixtures" / "tiny-decoder" / "supported-model-spec.json")
+        model_spec = SupportedModelSpec(**{name: value for name, value in raw.items() if name != "spec_id"})
+        for name in _op_order(model_spec.num_layers):
+            session.emit(K.MODEL_OP, {"output_position": 0, "op_name": name,
+                                     "shape": _canonical_shape(name, model_spec, length), "dtype": "torch.float32"})
     session.emit(K.MODEL_FORWARD_COMPLETED, {"output_position": 0, "logits_digest": "b" * 64})
     session.emit(K.SAMPLING_STARTED, {"output_position": 0, "sampling_spec_digest": spec.digest})
     session.emit(K.SAMPLING_SELECTED, {"output_position": 0, "sampling_spec_digest": spec.digest,
-                                     "logits_digest": "b" * 64, "draw_address": None, "selected_digest": "c" * 64})
+                                     "logits_digest": "b" * 64, "draw_address": [0, 0, 0] if spec.mode == "sample" else None,
+                                     "selected_digest": "c" * 64})
     session.emit(K.REQUEST_FINISHED, {"output_tokens": 1, "finish_reason": "MAX_NEW_TOKENS", "output_digest": "d" * 64})
     return session.finalize()
 
@@ -134,6 +142,15 @@ def _validation(path: Path, toolchain: dict[str, Any], fault_identity: dict[str,
 def _benchmark(path: Path, toolchain: dict[str, Any], identity: dict[str, Any]) -> None:
     path.mkdir()
     buckets: list[dict[str, Any]] = []
+    invariance_sampling = SamplingSpec(mode="sample", temperature=0.8, top_k=50, top_p=0.9, actual_seed=7)
+    result_fields = ["input_token_ids", "output_token_ids", "finish_reason", "actual_seed", "sampling_spec_digest",
+                     "next_output_position", "rng_draws_consumed", "committed_draw_addresses"]
+    invariance: dict[str, Any] = {"schema_version": 1, "status": "pass", "evidence_kind": "measured",
+                                  "scope": "fixed-public-synthetic-context-fixtures-only",
+                                  "token_id_disclosure": "public-synthetic-fixture-results-only; captures-remain-metadata-only",
+                                  "modes": ["off", "request", "ops"], "comparison_fields": result_fields,
+                                  "sampling_spec": invariance_sampling.to_dict(), "sampling_spec_digest": invariance_sampling.digest,
+                                  "context_buckets": []}
     for length in (8, 32, 128):
         observations: list[dict[str, Any]] = []
         for repetition in range(3):
@@ -141,10 +158,24 @@ def _benchmark(path: Path, toolchain: dict[str, Any], identity: dict[str, Any]) 
             manifest = _capture(path / link, identity, f"measured-{length}-{repetition}", length)
             observations.append({"repetition": repetition, "context_tokens": length, "output_tokens": 1,
                                  "server_full_context_forward_wall_time_ns": 1000 + repetition,
+                                 "logits_host_export_wall_time_ns": 100 + repetition, "sampling_wall_time_ns": 200 + repetition,
                                  "total_request_wall_time_ns": 2000 + repetition, "peak_device_allocated_bytes": None,
                                  "peak_device_reserved_bytes": None, "capture": link, "capture_manifest_digest": manifest["manifest_digest"]})
         ids = tuple(3 + index % 256 for index in range(length))
-        buckets.append({"context_tokens": length, "public_input_fixture_id": sha256_json({"schema_version": 1, "kind": "ascending-vocab-v1", "input_ids": ids}),
+        fixture_id = sha256_json({"schema_version": 1, "kind": "ascending-vocab-v1", "input_ids": ids})
+        outcomes: list[dict[str, Any]] = []
+        for mode in ("off", "request", "ops"):
+            link = f"telemetry-invariance/context-{length}/{mode}"
+            manifest = _capture(path / link, identity, f"telemetry-{length}", length, sampling=invariance_sampling, ops=mode == "ops")
+            result = {"input_token_ids": list(ids), "output_token_ids": [75], "finish_reason": "MAX_NEW_TOKENS",
+                      "actual_seed": 7, "sampling_spec_digest": invariance_sampling.digest, "next_output_position": 1,
+                      "rng_draws_consumed": 1, "committed_draw_addresses": [[0, 0, 0]]}
+            outcomes.append({"telemetry": mode, "request_id": f"telemetry-{length}", "generation_result": result,
+                             "generation_result_digest": sha256_json(result), "capture": link,
+                             "capture_manifest_digest": manifest["manifest_digest"]})
+        invariance["context_buckets"].append({"context_tokens": length, "public_input_fixture_id": fixture_id,
+                                             "status": "pass", "outcomes": outcomes})
+        buckets.append({"context_tokens": length, "public_input_fixture_id": fixture_id,
                         "observations": observations, "median_forward_wall_time_ns": 1001.0, "min_forward_wall_time_ns": 1000,
                         "max_forward_wall_time_ns": 1002, "relative_median_absolute_deviation": 1 / 1001, "stability": "pass"})
     report = {"schema_version": 1, "status": "pass", "experiment_id": "reference-full-context-v1", "performance_outcome": "baseline_only",
@@ -154,7 +185,9 @@ def _benchmark(path: Path, toolchain: dict[str, Any], identity: dict[str, Any]) 
               "measurement_contract": {"warmups_per_bucket": 1, "repetitions_per_bucket": 3, "output_tokens_per_repetition": 1,
                                        "clock": "perf_counter_ns", "tf32_enabled": False, "telemetry": "request", "synchronization": "synchronous_cpu",
                                        "stability_rule": "relative_median_absolute_deviation<=0.20; no observations discarded",
-                                       "cpu_peak_memory_measured": False, "load_time_excluded": True}, "context_buckets": buckets}
+                                       "partial_timing_spans_are_total_overhead": False, "telemetry_invariance_is_timing_comparison": False,
+                                       "cpu_peak_memory_measured": False, "load_time_excluded": True},
+              "telemetry_invariance": invariance, "context_buckets": buckets}
     _signed(path / "benchmark-report.json", report, "report_digest")
     _write(path / "checksums.json", _inventory(path))
     (path / "COMPLETE").touch()
@@ -393,6 +426,54 @@ def test_sealer_cannot_run_outside_finalized_environment(sealed: Path, tmp_path:
                                           sampler_fixture=sealed / "sampling" / "known-answer.json", output=tmp_path / "forbidden")
     assert raised.value.code is ErrorCode.TOOLCHAIN_MISMATCH
     assert not (tmp_path / "forbidden").exists()
+
+
+@pytest.mark.parametrize("mutation", ["token", "finish", "address", "seed", "missing-mode", "capture-reuse", "no-ops",
+                                      "negative-host-export", "float-host-export", "boolean-sampling", "missing-sampling",
+                                      "partial-spans-exceed-total", "overhead-claim"])
+def test_benchmark_telemetry_guardrails_reject_fully_resigned_semantic_changes(sealed: Path, mutation: str) -> None:
+    directory = sealed / "benchmark"
+    path = directory / "benchmark-report.json"
+    value = _read(path)
+    outcomes = value["telemetry_invariance"]["context_buckets"][0]["outcomes"]
+    result = outcomes[2]["generation_result"]
+    if mutation == "token":
+        result["output_token_ids"][0] += 1
+    elif mutation == "finish":
+        result["finish_reason"] = "EOS"
+    elif mutation == "address":
+        result["committed_draw_addresses"][0][2] = 1
+    elif mutation == "seed":
+        result["actual_seed"] += 1
+    elif mutation == "missing-mode":
+        outcomes.pop()
+    elif mutation == "capture-reuse":
+        outcomes[2]["capture"] = outcomes[0]["capture"]
+        outcomes[2]["capture_manifest_digest"] = outcomes[0]["capture_manifest_digest"]
+    elif mutation == "no-ops":
+        target = directory / outcomes[2]["capture"]
+        shutil.rmtree(target)
+        shutil.copytree(directory / outcomes[0]["capture"], target)
+        outcomes[2]["capture_manifest_digest"] = _read(target / "capture-manifest.json")["manifest_digest"]
+    elif mutation == "negative-host-export":
+        value["context_buckets"][0]["observations"][0]["logits_host_export_wall_time_ns"] = -1
+    elif mutation == "float-host-export":
+        value["context_buckets"][0]["observations"][0]["logits_host_export_wall_time_ns"] = 1.5
+    elif mutation == "boolean-sampling":
+        value["context_buckets"][0]["observations"][0]["sampling_wall_time_ns"] = True
+    elif mutation == "missing-sampling":
+        value["context_buckets"][0]["observations"][0].pop("sampling_wall_time_ns")
+    elif mutation == "partial-spans-exceed-total":
+        value["context_buckets"][0]["observations"][0]["sampling_wall_time_ns"] = 1500
+    else:
+        value["measurement_contract"]["partial_timing_spans_are_total_overhead"] = True
+    for outcome in outcomes:
+        outcome["generation_result_digest"] = sha256_json(outcome["generation_result"])
+    _signed(path, value, "report_digest")
+    _write(directory / "checksums.json", {name: digest for name, digest in _inventory(directory).items() if name not in {"checksums.json", "COMPLETE"}})
+    _resign(sealed)
+    with pytest.raises(IllmError):
+        verify_reference_profile_evidence(sealed)
 
 
 def test_cleanroom_profile_cannot_be_claimed_without_phase_transcripts(sealed: Path) -> None:
