@@ -1,0 +1,1 @@
+{"default_add_bos":false,"empty_input_policy":"bos_if_empty","kind":"hf-tokenizers-json","revision":"060db6499f32faf8b98477b0a26969ef7d8b9987","schema_version":1,"template_version":"raw-text-no-chat-v1","vocab_size":151936}

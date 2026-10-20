@@ -1,0 +1,19 @@
+# V0.0 release commands. Run from the checked-out repository root.
+# SYSTEM_PYTHON: Windows Python >=3.11. WSL_PROJECT_ROOT: this checkout's /mnt/... path.
+# Every --output directory below must be new; use a new suffix for a repeated gate.
+
+SYSTEM_PYTHON scripts/run_v00_gate.py --profile v00-release-windows --output out/v00-release-windows --rollback
+wsl.exe -d Ubuntu-24.04 --cd WSL_PROJECT_ROOT -- /usr/bin/python3 scripts/run_v00_gate.py --profile v00-release-linux --output out/v00-release-linux
+
+SYSTEM_PYTHON scripts/in_env.py --manifest out/v00-release-windows/toolchain.json --expected-manifest-digest-file out/v00-release-windows/toolchain.sha256 -- python scripts/build_v00_evidence.py --toolchain-manifest out/v00-release-windows/toolchain.json --capture out/v00-release-windows --junit out/v00-release-windows/junit.xml --commands evidence/v0.0/commands.txt --transcripts out/v00-release-windows --output release/v0.0.0
+SYSTEM_PYTHON scripts/in_env.py --manifest out/v00-release-windows/toolchain.json --expected-manifest-digest-file out/v00-release-windows/toolchain.sha256 -- python scripts/merge_v00_qualification.py --release-dir release/v0.0.0 --base-toolchain-manifest out/v00-release-windows/toolchain.json --profile-evidence out/v00-release-windows/qualification
+SYSTEM_PYTHON scripts/in_env.py --manifest out/v00-release-windows/toolchain.json --expected-manifest-digest-file out/v00-release-windows/toolchain.sha256 -- python scripts/merge_v00_qualification.py --release-dir release/v0.0.0 --base-toolchain-manifest out/v00-release-windows/toolchain.json --profile-evidence out/v00-release-linux/qualification
+SYSTEM_PYTHON scripts/in_env.py --manifest out/v00-release-windows/toolchain.json --expected-manifest-digest-file out/v00-release-windows/toolchain.sha256 -- python -m illm release verify release/v0.0.0/manifest.json
+SYSTEM_PYTHON scripts/in_env.py --manifest out/v00-release-windows/toolchain.json --expected-manifest-digest-file out/v00-release-windows/toolchain.sha256 -- python scripts/promote_v00.py
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate_specs.ps1 -RepositoryRoot .
+
+# After independent CI and archive verification, create an annotated immutable tag.
+# The annotation binds the final release/v0.0.0/manifest.json manifest_digest.
+# git tag -a v0.0.0 -m "V0.0 Bootstrap Lab; manifest SHA256=<verified manifest_digest>"
+# git push origin main
+# git push origin refs/tags/v0.0.0

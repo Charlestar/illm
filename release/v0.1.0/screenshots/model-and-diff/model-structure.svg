@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1320" viewBox="0 0 1440 1320" role="img" aria-labelledby="title description">
+<title id="title">Tiny decoder model structure</title><desc id="description">Two decoder layers with RMSNorm, RoPE, grouped-query causal attention, gated MLP and tied embedding/LM head.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#52677d"/></marker></defs>
+<rect width="1440" height="1320" fill="#ffffff"/>
+<g font-family="DejaVu Sans,Arial,sans-serif">
+<text x="38" y="46" font-size="30" fill="#1d2d44">Tiny decoder: model structure</text>
+<text x="38" y="78" font-size="17" fill="#1d2d44">Generated SVG diagram, not a UI screenshot. Shapes are derived from the verified inspect-compatible structure.</text>
+<text x="38" y="109" font-size="17" fill="#1d2d44">Qwen2ForCausalLM | layers=2 | 27008 unique parameters | 26 canonical storages | fp32</text>
+<text x="38" y="139" font-size="17" fill="#1d2d44">B = batch; T = current full context. No KV cache: each generated token recomputes the full context.</text>
+<rect x="275" y="170" width="890" height="94" rx="12" fill="#f0f7ff" stroke="#4a709a"/><text x="293" y="200" font-size="20" fill="#1d2d44">Token IDs -&gt; embedding</text><text x="293" y="228" font-size="16" fill="#1d2d44">IDs [B,T] -&gt; hidden [B,T,32] | shared embedding weight [259,32]</text>
+<path d="M 420 265 L 360 316" fill="none" stroke="#52677d" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="53" y="300" font-size="24" fill="#1d2d44">Decoder layer 0</text>
+<rect x="38" y="320" width="655" height="90" rx="12" fill="#f0f7ff" stroke="#4a709a"/><text x="56" y="350" font-size="20" fill="#1d2d44">Pre-attention RMSNorm</text><text x="56" y="378" font-size="16" fill="#1d2d44">[B,T,32] | epsilon=1e-06</text>
+<rect x="38" y="440" width="655" height="118" rx="12" fill="#f0f7ff" stroke="#4a709a"/><text x="56" y="470" font-size="20" fill="#1d2d44">Q/K/V projections + RoPE</text><text x="56" y="498" font-size="16" fill="#1d2d44">Q [B,4,T,8] | K,V [B,2,T,8]</text>
+<text x="56" y="522" font-size="16" fill="#1d2d44">Q/K rotary positions | theta=10000.0 | Q/K/V bias</text>
+<rect x="38" y="588" width="655" height="118" rx="12" fill="#f0f7ff" stroke="#4a709a"/><text x="56" y="618" font-size="20" fill="#1d2d44">GQA + causal attention + residual</text><text x="56" y="646" font-size="16" fill="#1d2d44">4 Q heads share 2 KV heads (2 Q per KV)</text>
+<text x="56" y="670" font-size="16" fill="#1d2d44">scores/probabilities [B,4,T,T] -&gt; output [B,T,32]</text>
+<rect x="38" y="736" width="655" height="90" rx="12" fill="#f0f7ff" stroke="#4a709a"/><text x="56" y="766" font-size="20" fill="#1d2d44">Post-attention RMSNorm</text><text x="56" y="794" font-size="16" fill="#1d2d44">[B,T,32] | second pre-norm before the MLP</text>
+<rect x="38" y="856" width="655" height="118" rx="12" fill="#f0f7ff" stroke="#4a709a"/><text x="56" y="886" font-size="20" fill="#1d2d44">Gated SiLU MLP + residual</text><text x="56" y="914" font-size="16" fill="#1d2d44">gate/up [64,32] -&gt; SiLU(gate) * up [B,T,64]</text>
+<text x="56" y="938" font-size="16" fill="#1d2d44">down [32,64] -&gt; [B,T,32] + residual</text>
+<path d="M 365 410 L 365 440" fill="none" stroke="#52677d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 365 558 L 365 588" fill="none" stroke="#52677d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 365 706 L 365 736" fill="none" stroke="#52677d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 365 826 L 365 856" fill="none" stroke="#52677d" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="761" y="300" font-size="24" fill="#1d2d44">Decoder layer 1</text>
+<rect x="746" y="320" width="655" height="90" rx="12" fill="#f0f7ff" stroke="#4a709a"/><text x="764" y="350" font-size="20" fill="#1d2d44">Pre-attention RMSNorm</text><text x="764" y="378" font-size="16" fill="#1d2d44">[B,T,32] | epsilon=1e-06</text>
+<rect x="746" y="440" width="655" height="118" rx="12" fill="#f0f7ff" stroke="#4a709a"/><text x="764" y="470" font-size="20" fill="#1d2d44">Q/K/V projections + RoPE</text><text x="764" y="498" font-size="16" fill="#1d2d44">Q [B,4,T,8] | K,V [B,2,T,8]</text>
+<text x="764" y="522" font-size="16" fill="#1d2d44">Q/K rotary positions | theta=10000.0 | Q/K/V bias</text>
+<rect x="746" y="588" width="655" height="118" rx="12" fill="#f0f7ff" stroke="#4a709a"/><text x="764" y="618" font-size="20" fill="#1d2d44">GQA + causal attention + residual</text><text x="764" y="646" font-size="16" fill="#1d2d44">4 Q heads share 2 KV heads (2 Q per KV)</text>
+<text x="764" y="670" font-size="16" fill="#1d2d44">scores/probabilities [B,4,T,T] -&gt; output [B,T,32]</text>
+<rect x="746" y="736" width="655" height="90" rx="12" fill="#f0f7ff" stroke="#4a709a"/><text x="764" y="766" font-size="20" fill="#1d2d44">Post-attention RMSNorm</text><text x="764" y="794" font-size="16" fill="#1d2d44">[B,T,32] | second pre-norm before the MLP</text>
+<rect x="746" y="856" width="655" height="118" rx="12" fill="#f0f7ff" stroke="#4a709a"/><text x="764" y="886" font-size="20" fill="#1d2d44">Gated SiLU MLP + residual</text><text x="764" y="914" font-size="16" fill="#1d2d44">gate/up [64,32] -&gt; SiLU(gate) * up [B,T,64]</text>
+<text x="764" y="938" font-size="16" fill="#1d2d44">down [32,64] -&gt; [B,T,32] + residual</text>
+<path d="M 1073 410 L 1073 440" fill="none" stroke="#52677d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 1073 558 L 1073 588" fill="none" stroke="#52677d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 1073 706 L 1073 736" fill="none" stroke="#52677d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 1073 826 L 1073 856" fill="none" stroke="#52677d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 365 975 L 365 1000 L 720 1000 L 720 302 L 1073 302 L 1073 318" fill="none" stroke="#52677d" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 1073 975 L 1073 1042" fill="none" stroke="#52677d" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="275" y="1044" width="890" height="118" rx="12" fill="#f0f7ff" stroke="#4a709a"/><text x="293" y="1074" font-size="20" fill="#1d2d44">Final RMSNorm -&gt; tied LM head -&gt; logits</text><text x="293" y="1102" font-size="16" fill="#1d2d44">[B,T,32] -&gt; [B,T,259] | LM head reuses embedding storage, no duplicate parameters</text>
+<text x="293" y="1126" font-size="16" fill="#1d2d44">Only the last-position logits feed the separately specified sampler.</text>
+<text x="38" y="1205" font-size="14" fill="#1d2d44">spec_id: 2951c0cfd9c3525db490dd2fd97a768e726e79ba366c8b24e820779a307ee873</text>
+<text x="38" y="1232" font-size="14" fill="#1d2d44">weight manifest digest: dd0827b9ed7e4b1e2808e30552602a38cdda4666bf8b1417482b69ce1e5840bd</text>
+<text x="38" y="1259" font-size="14" fill="#1d2d44">validation report digest: c9108e8c6690d0b6e7ad65fccbf389ec9614164d3cfec3ba5a2947e2b9b3e42c</text>
+<text x="38" y="1290" font-size="15" fill="#1d2d44">Provenance: recorded spec/storage metadata; arrows and symbolic tensor shapes are derived, not measured timings.</text>
+</g></svg>

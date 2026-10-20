@@ -1,0 +1,36 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/istar/illm-v01-r3-clean-26YfFo
+configfile: pyproject.toml
+collected 376 items
+
+tests/cpu/test_capture_replay.py .........                               [  2%]
+tests/cpu/test_cli.py ..                                                 [  2%]
+tests/cpu/test_contract_files.py ...                                     [  3%]
+tests/cpu/test_domain.py .....                                           [  5%]
+tests/cpu/test_observability.py ................                         [  9%]
+tests/cpu/test_promote_v01.py ...............                            [ 13%]
+tests/cpu/test_qualification.py sss                                      [ 14%]
+tests/cpu/test_reference_capture.py ..................                   [ 18%]
+tests/cpu/test_reference_cli.py ...........................              [ 26%]
+tests/cpu/test_reference_gate_drivers.py .................               [ 30%]
+tests/cpu/test_reference_qualification.py .............................. [ 38%]
+......................                                                   [ 44%]
+tests/cpu/test_reference_release.py ...............................      [ 52%]
+tests/cpu/test_reference_rollback.py ..................                  [ 57%]
+tests/cpu/test_release_bundle.py ..................                      [ 62%]
+tests/cpu/test_release_state.py ....                                     [ 63%]
+tests/cpu/test_runtime_toolchain.py ...................................  [ 72%]
+tests/cpu/test_sampling_reference.py .............................       [ 80%]
+tests/cpu/test_subtest_junit.py ........                                 [ 82%]
+tests/cpu/test_toolchain_runner.py .........                             [ 84%]
+tests/model/test_cli_runtime.py .                                        [ 85%]
+tests/model/test_contracts.py ..................                         [ 89%]
+tests/model/test_engine.py ...................                           [ 94%]
+tests/model/test_gpu_oom_probe.py ...                                    [ 95%]
+tests/model/test_reference.py ................                           [100%]
+
+- generated xml file: /home/istar/illm-v01-r3-clean-26YfFo/out/v01-final-clean-r3/junit.xml -
+=========================== short test summary info ============================
+SKIPPED [3] tests/cpu/test_qualification.py:27: V0.0 producer requires schema0; executed separately by legacy-format-contract CI
+================== 373 passed, 3 skipped in 68.58s (0:01:08) ===================

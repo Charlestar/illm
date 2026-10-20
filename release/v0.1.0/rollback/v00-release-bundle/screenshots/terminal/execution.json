@@ -1,0 +1,182 @@
+[
+  {
+    "phase": "bootstrap",
+    "argv": [
+      "C:\\Users\\iStar\\scoop\\apps\\miniconda3\\current\\python.exe",
+      "scripts/bootstrap.py",
+      "--profile",
+      "v00-release-windows",
+      "--locked",
+      "--write-manifest",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\toolchain.json",
+      "--write-manifest-digest",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\toolchain.sha256"
+    ],
+    "returncode": 0
+  },
+  {
+    "phase": "quality",
+    "argv": [
+      "C:\\Users\\iStar\\scoop\\apps\\miniconda3\\current\\python.exe",
+      "scripts/in_env.py",
+      "--manifest",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\toolchain.json",
+      "--expected-manifest-digest-file",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\toolchain.sha256",
+      "--",
+      "python",
+      "scripts/check_quality.py",
+      "--output",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\quality.json"
+    ],
+    "returncode": 0
+  },
+  {
+    "phase": "tests",
+    "argv": [
+      "C:\\Users\\iStar\\scoop\\apps\\miniconda3\\current\\python.exe",
+      "scripts/in_env.py",
+      "--manifest",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\toolchain.json",
+      "--expected-manifest-digest-file",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\toolchain.sha256",
+      "--",
+      "python",
+      "-m",
+      "pytest",
+      "-p",
+      "no:cacheprovider",
+      "tests/cpu",
+      "--tb=short",
+      "--basetemp",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\pytest-temp",
+      "--junitxml",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\junit.xml"
+    ],
+    "returncode": 0
+  },
+  {
+    "phase": "demo",
+    "argv": [
+      "C:\\Users\\iStar\\scoop\\apps\\miniconda3\\current\\python.exe",
+      "scripts/in_env.py",
+      "--manifest",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\toolchain.json",
+      "--expected-manifest-digest-file",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\toolchain.sha256",
+      "--",
+      "python",
+      "-m",
+      "illm",
+      "demo",
+      "toy-scheduler",
+      "--seed",
+      "7",
+      "--steps",
+      "20",
+      "--capture",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows"
+    ],
+    "returncode": 0
+  },
+  {
+    "phase": "r0",
+    "argv": [
+      "C:\\Users\\iStar\\scoop\\apps\\miniconda3\\current\\python.exe",
+      "scripts/in_env.py",
+      "--manifest",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\toolchain.json",
+      "--expected-manifest-digest-file",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\toolchain.sha256",
+      "--",
+      "python",
+      "-m",
+      "illm",
+      "replay",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows",
+      "--mode",
+      "trace"
+    ],
+    "returncode": 0
+  },
+  {
+    "phase": "r1",
+    "argv": [
+      "C:\\Users\\iStar\\scoop\\apps\\miniconda3\\current\\python.exe",
+      "scripts/in_env.py",
+      "--manifest",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\toolchain.json",
+      "--expected-manifest-digest-file",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\toolchain.sha256",
+      "--",
+      "python",
+      "-m",
+      "illm",
+      "replay",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows",
+      "--mode",
+      "state",
+      "--assert-state-digest"
+    ],
+    "returncode": 0
+  },
+  {
+    "phase": "qualify",
+    "argv": [
+      "C:\\Users\\iStar\\scoop\\apps\\miniconda3\\current\\python.exe",
+      "scripts/in_env.py",
+      "--manifest",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\toolchain.json",
+      "--expected-manifest-digest-file",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\toolchain.sha256",
+      "--",
+      "python",
+      "scripts/qualify_v00.py",
+      "--toolchain-manifest",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\toolchain.json",
+      "--junit",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\junit.xml",
+      "--quality",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\quality.json",
+      "--capture",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows",
+      "--output",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\qualification"
+    ],
+    "returncode": 0
+  },
+  {
+    "phase": "rollback-bootstrap",
+    "argv": [
+      "C:\\Users\\iStar\\scoop\\apps\\miniconda3\\current\\python.exe",
+      "scripts/bootstrap.py",
+      "--profile",
+      "v00-release-windows-rollback",
+      "--locked",
+      "--write-manifest",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\rollback-toolchain.json",
+      "--write-manifest-digest",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\rollback-toolchain.sha256"
+    ],
+    "returncode": 0
+  },
+  {
+    "phase": "rollback",
+    "argv": [
+      "C:\\Users\\iStar\\scoop\\apps\\miniconda3\\current\\python.exe",
+      "scripts/in_env.py",
+      "--manifest",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\rollback-toolchain.json",
+      "--expected-manifest-digest-file",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\rollback-toolchain.sha256",
+      "--",
+      "python",
+      "scripts/rollback_v00.py",
+      "--toolchain-manifest",
+      "C:\\Users\\iStar\\Documents\\ChatGPT\\illm\\out\\v00-release-windows\\rollback-toolchain.json",
+      "--evidence-dir",
+      "release/v0.0.0/rollback"
+    ],
+    "returncode": 0
+  }
+]

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1140" viewBox="0 0 1440 1140" role="img" aria-labelledby="title description">
+<title id="title">First divergent Q projection and separate token effects</title><desc id="description">Pure Q transpose preserves the measured greedy token; a separate compound fault changes it. Both first diverge at layer zero Q projection.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#52677d"/></marker></defs>
+<rect width="1440" height="1140" fill="#ffffff"/>
+<g font-family="DejaVu Sans,Arial,sans-serif">
+<text x="38" y="46" font-size="30" fill="#1d2d44">First divergence: find the broken operator</text>
+<text x="38" y="80" font-size="17" fill="#1d2d44">Generated SVG diagram from actual fault reports, not a UI screenshot or another numerical run.</text>
+<text x="38" y="112" font-size="17" fill="#1d2d44">Two distinct experiments: a numerical mismatch does not necessarily change greedy argmax.</text>
+<text x="38" y="146" font-size="14" fill="#1d2d44">Validation report digest: c9108e8c6690d0b6e7ad65fccbf389ec9614164d3cfec3ba5a2947e2b9b3e42c</text>
+<text x="46" y="205" font-size="23" fill="#1d2d44">A. Q weight transpose only</text>
+<rect x="38" y="228" width="655" height="88" rx="12" fill="#f0f7ff" stroke="#4a709a"/><text x="56" y="258" font-size="20" fill="#1d2d44">embedding -&gt; input RMSNorm: PASS</text><text x="56" y="286" font-size="16" fill="#1d2d44">Both operators before Q projection match within tolerance.</text>
+<path d="M 365 317 L 365 345" fill="none" stroke="#52677d" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="38" y="348" width="655" height="118" rx="12" fill="#fff1f0" stroke="#bb3434"/><text x="56" y="378" font-size="20" fill="#1d2d44">FIRST FAIL: layer.0.q_projection</text><text x="56" y="406" font-size="16" fill="#1d2d44">expected [1, 4, 6, 8] / actual [1, 4, 6, 8]</text>
+<text x="56" y="430" font-size="16" fill="#1d2d44">191 mismatches | first flat index 1</text>
+<text x="54" y="505" font-size="16" fill="#1d2d44">max absolute error: 0.33681052178144455</text>
+<text x="54" y="534" font-size="16" fill="#1d2d44">max relative error: 241.06663099502407</text>
+<text x="54" y="563" font-size="16" fill="#1d2d44">first expected value: 0.11220268160104752</text>
+<text x="54" y="592" font-size="16" fill="#1d2d44">first actual value: 0.06406726688146591</text>
+<text x="54" y="621" font-size="16" fill="#1d2d44">tolerance: atol=0.0001, rtol=0.001</text>
+<text x="54" y="650" font-size="16" fill="#1d2d44">profile: tiny-fp32-op-v1</text>
+<rect x="38" y="702" width="655" height="118" rx="12" fill="#f0f7ff" stroke="#4a709a"/><text x="56" y="732" font-size="20" fill="#1d2d44">Measured final output (expected -&gt; actual)</text><text x="56" y="760" font-size="16" fill="#1d2d44">greedy token: 114 -&gt; 114 | token mismatch: false</text>
+<text x="56" y="784" font-size="16" fill="#1d2d44">final-logit max absolute error: 0.0017302632331848145</text>
+<text x="54" y="859" font-size="16" fill="#1d2d44">Injected mutations: 1 (Q transpose)</text>
+<text x="54" y="885" font-size="16" fill="#1d2d44">Same selected token does not imply correct intermediate tensors.</text>
+<text x="54" y="946" font-size="13" fill="#1d2d44">Report: fault-transposed-q.json</text>
+<text x="54" y="975" font-size="12" fill="#1d2d44">SHA256: f880aab58068051c4edcdcfdabb3c77b6309d92fe57d91c60cbb41fdcbdd6573</text>
+<text x="754" y="205" font-size="23" fill="#1d2d44">B. Q transpose + zero final norm</text>
+<rect x="746" y="228" width="655" height="88" rx="12" fill="#f0f7ff" stroke="#4a709a"/><text x="764" y="258" font-size="20" fill="#1d2d44">embedding -&gt; input RMSNorm: PASS</text><text x="764" y="286" font-size="16" fill="#1d2d44">Both operators before Q projection match within tolerance.</text>
+<path d="M 1073 317 L 1073 345" fill="none" stroke="#52677d" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="746" y="348" width="655" height="118" rx="12" fill="#fff1f0" stroke="#bb3434"/><text x="764" y="378" font-size="20" fill="#1d2d44">FIRST FAIL: layer.0.q_projection</text><text x="764" y="406" font-size="16" fill="#1d2d44">expected [1, 4, 6, 8] / actual [1, 4, 6, 8]</text>
+<text x="764" y="430" font-size="16" fill="#1d2d44">191 mismatches | first flat index 1</text>
+<text x="762" y="505" font-size="16" fill="#1d2d44">max absolute error: 0.33681052178144455</text>
+<text x="762" y="534" font-size="16" fill="#1d2d44">max relative error: 241.06663099502407</text>
+<text x="762" y="563" font-size="16" fill="#1d2d44">first expected value: 0.11220268160104752</text>
+<text x="762" y="592" font-size="16" fill="#1d2d44">first actual value: 0.06406726688146591</text>
+<text x="762" y="621" font-size="16" fill="#1d2d44">tolerance: atol=0.0001, rtol=0.001</text>
+<text x="762" y="650" font-size="16" fill="#1d2d44">profile: tiny-fp32-op-v1</text>
+<rect x="746" y="702" width="655" height="118" rx="12" fill="#fff1f0" stroke="#bb3434"/><text x="764" y="732" font-size="20" fill="#1d2d44">Measured final output (expected -&gt; actual)</text><text x="764" y="760" font-size="16" fill="#1d2d44">greedy token: 114 -&gt; 0 | token mismatch: true</text>
+<text x="764" y="784" font-size="16" fill="#1d2d44">final-logit max absolute error: 0.5620092749595642</text>
+<text x="762" y="859" font-size="16" fill="#1d2d44">Injected mutations: 2 (Q transpose; final norm zero)</text>
+<text x="762" y="885" font-size="16" fill="#1d2d44">A changed argmax is not attributed to transpose alone.</text>
+<text x="762" y="946" font-size="13" fill="#1d2d44">Report: fault-q-transpose-and-zero-final-norm.json</text>
+<text x="762" y="975" font-size="12" fill="#1d2d44">SHA256: 6a8f0bf2f3e077027a3295b2deb34ebe1b911527c9a2d4987bf39c50050c7f25</text>
+<text x="38" y="1040" font-size="17" fill="#1d2d44">Fault experiments intentionally FAIL numerical comparison; their diagnostic checks PASS because the first wrong operator is found.</text>
+<text x="38" y="1074" font-size="16" fill="#1d2d44">The portable profile verifier checks fault transformations, per-op order, frozen tolerances and measured output effects before drawing.</text>
+<text x="38" y="1106" font-size="16" fill="#1d2d44">No performance, trained-model quality, UI rendering or universal hardware support claim is made by these derived diagrams.</text>
+</g></svg>

@@ -1,0 +1,1 @@
+{"code": "UNSUPPORTED_SCHEMA", "message": "unsupported capture schema"}

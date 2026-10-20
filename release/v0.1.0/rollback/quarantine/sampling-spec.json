@@ -1,0 +1,1 @@
+{"actual_seed":7,"compute_dtype":"fp32","mode":"greedy","processor_order_version":1,"rng_algorithm":"philox4x32-10","rng_contract_version":1,"schema_version":1,"temperature":0.0,"top_k":0,"top_p":1.0}

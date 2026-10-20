@@ -1,0 +1,1 @@
+{"asserted":true,"final_state_digest":"8678d4d2a8442c7b56830d326fc7874f5473e92357883e7402e38a2545420a55","mode":"R1_TOY","steps":20}

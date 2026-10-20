@@ -1,0 +1,1 @@
+{"asserted":true,"final_state_digest":"97ab65c266d5babc3733b723dfb71413a582b24acfce7a179802df708a176327","mode":"R1_REFERENCE","numerical_reexecution":false,"output_tokens":8,"rng_draws_consumed":0,"status":"FINISHED"}

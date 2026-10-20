@@ -1,0 +1,50 @@
+# V0.1 qualification recipe, not an execution transcript or publication proof.
+# Use Python3.12. Run downloads explicitly before offline qualification.
+python scripts/fetch_runtime.py --runtime-profile v01-cpu --artifact-cache .illm/cache/runtime
+python scripts/fetch_runtime.py --runtime-profile py312-linux-x86_64-cpu --artifact-cache .illm/cache/runtime
+python scripts/fetch_runtime.py --runtime-profile py312-linux-x86_64-cu126 --artifact-cache .illm/cache/runtime
+python scripts/fetch_model.py --model-profile configs/models/v0_1.yaml
+
+# Each output must be a fresh path. Execute from one frozen source revision.
+# Windows CPU:
+python scripts/run_v01_gate.py --profile v01-release-cpu --runtime-profile v01-cpu --profile-id tiny-reference-cpu-v1 --output out/v01-final-cpu
+# Linux CPU clean room, preferably in a native-ext4 temporary checkout of the same frozen Git archive:
+python3 scripts/run_v01_gate.py --profile v01-release-clean --runtime-profile v01-cpu --profile-id clean-room-release-v1 --output out/v01-final-clean
+# Linux RTX3070 CUDA, sequential BF16/FP16 validation and a separate-process allocator-budget OOM probe:
+python3 scripts/run_v01_gate.py --profile v01-release-gpu --runtime-profile v01-cuda --profile-id real-model-single-gpu-v1 --model configs/models/v0_1.yaml --fp16-model configs/models/v0_1_fp16.yaml --device cuda:0 --output out/v01-final-gpu
+
+# The gate records actual argv/exit codes/stdout/stderr and validates each artifact.
+# It does not create a tag. A version tag is published only after semantic bundle
+# verification, source matching, rollback rehearsal and independent CI succeed.
+# A download, development run or status label cannot grant a qualification pass.
+
+# Assemble on the original frozen Git checkout after copying the sealed Linux
+# qualification/ directories back unchanged (never copy their environments).
+# The fixed V0.0 tag must be available locally for this isolated rehearsal.
+python scripts/in_env.py --manifest out/v01-final-cpu/toolchain.json --expected-manifest-digest-file out/v01-final-cpu/toolchain.sha256 -- python scripts/rollback_v01.py --output out/v01-final-rollback --v01-capture out/v01-final-cpu/capture --v01-toolchain-manifest out/v01-final-cpu/toolchain.json --validation-directory out/v01-final-cpu/validation --evidence-mode release
+
+# PowerShell: stage exactly the five documents from the same qualified SOURCE.
+New-Item -ItemType Directory -Path out/v01-release-documents
+Copy-Item evidence/v0.1/commands.txt out/v01-release-documents/commands.txt
+Copy-Item docs/teach-back-v0.1.md out/v01-release-documents/teach-back.md
+Copy-Item evidence/v0.1/known-limitations.md out/v01-release-documents/known-limitations.md
+Copy-Item evidence/v0.1/release-notes.md out/v01-release-documents/release-notes.md
+Copy-Item docs/specs/versions/v0.1-reference-runner.md out/v01-release-documents/spec.md
+
+# The publisher derives portable facts and static learning diagrams; it does not
+# create a tag. The embedded SPEC remains the byte-identical implemented/dev-snapshot
+# source fact with not-run profiles. The candidate manifest alone derives the three
+# actual passes and functional qualification. Promotion reverifies both, then changes
+# only generated manifest metadata; it never rewrites the SPEC or asks it to preclaim pass.
+python scripts/in_env.py --manifest out/v01-final-cpu/toolchain.json --expected-manifest-digest-file out/v01-final-cpu/toolchain.sha256 -- python scripts/build_v01_release.py --evidence-root out/v01-final-cpu/qualification --evidence-root out/v01-final-gpu/qualification --evidence-root out/v01-final-clean/qualification --rollback out/v01-final-rollback --documentation-root out/v01-release-documents --output release/v0.1.0
+python scripts/in_env.py --manifest out/v01-final-cpu/toolchain.json --expected-manifest-digest-file out/v01-final-cpu/toolchain.sha256 -- python scripts/promote_v01.py --release-dir release/v0.1.0
+python scripts/in_env.py --manifest out/v01-final-cpu/toolchain.json --expected-manifest-digest-file out/v01-final-cpu/toolchain.sha256 -- python -m illm release verify release/v0.1.0/manifest.json --require-current-source
+
+# Commit and push the verified bundle without changing the frozen source:
+# git push origin main
+# Wait for all required CI jobs on that exact commit, including current-source
+# bundle verification. Only then create the annotated immutable learning tag:
+# git tag -a v0.1.0 <verified-commit> -m "V0.1 Reference Runner; manifest <verified-digest>"
+# git push origin v0.1.0
+# git ls-remote origin refs/tags/v0.1.0 refs/tags/v0.1.0^{}
+# Never use --force or move an existing learning checkpoint.

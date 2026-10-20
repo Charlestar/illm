@@ -1,0 +1,18 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\iStar\Documents\ChatGPT\illm
+configfile: pyproject.toml
+collected 61 items
+
+tests\cpu\test_capture_replay.py .........                               [ 14%]
+tests\cpu\test_cli.py ..                                                 [ 18%]
+tests\cpu\test_contract_files.py ...                                     [ 22%]
+tests\cpu\test_domain.py .....                                           [ 31%]
+tests\cpu\test_observability.py ........                                 [ 44%]
+tests\cpu\test_qualification.py ...                                      [ 49%]
+tests\cpu\test_release_bundle.py ..................                      [ 78%]
+tests\cpu\test_release_state.py ....                                     [ 85%]
+tests\cpu\test_toolchain_runner.py .........                             [100%]
+
+- generated xml file: C:\Users\iStar\Documents\ChatGPT\illm\out\v00-release-windows\junit.xml -
+============================= 61 passed in 39.88s =============================
