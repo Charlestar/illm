@@ -2,8 +2,9 @@
 
 Target tag: `v0.1.0`. This source document is not a publication announcement.
 The verified release bundle and immutable Git tag determine actual release state.
-It is frozen before final qualification; a failure must prevent publication,
-not be hidden by the release-oriented metadata in this document or the SPEC.
+The embedded SPEC remains the byte-identical pre-qualification source snapshot;
+the generated bundle manifest alone derives candidate, qualification and release
+axes from sealed evidence. A failed gate must prevent promotion and publication.
 
 ## New learning checkpoint
 

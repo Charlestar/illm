@@ -67,7 +67,7 @@ jobs:
         run: python scripts/in_env.py --manifest out/v0.1/toolchain.json --expected-manifest-digest-file out/v0.1/toolchain.sha256 -- python -m illm release verify release/v0.0.0/manifest.json
       - name: Independently verify the V0.1 release bundle when present
         if: ${{ hashFiles('release/v0.1.0/manifest.json') != '' }}
-        run: python scripts/in_env.py --manifest out/v0.1/toolchain.json --expected-manifest-digest-file out/v0.1/toolchain.sha256 -- python -m illm release verify release/v0.1.0/manifest.json
+        run: python scripts/in_env.py --manifest out/v0.1/toolchain.json --expected-manifest-digest-file out/v0.1/toolchain.sha256 -- python -m illm release verify release/v0.1.0/manifest.json --require-current-source
       - name: Toy capture
         run: python scripts/in_env.py --manifest out/v0.1/toolchain.json --expected-manifest-digest-file out/v0.1/toolchain.sha256 -- python -m illm demo toy-scheduler --seed 7 --steps 20 --capture out/v0.0
       - name: R0 playback

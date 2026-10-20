@@ -12,7 +12,9 @@ import pytest
 from illm.canonical import sha256_json
 from illm.domain.errors import ErrorCode, IllmError
 from illm.reference_qualification import PROFILES, _inventory, _object, _write
-from illm.reference_release import MANIFEST_FIELDS, _state
+from illm.reference_release import (
+    FROZEN_SPEC_AXES, FROZEN_SPEC_PROFILES, MANIFEST_FIELDS, _state, verify_frozen_v01_spec,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -27,7 +29,24 @@ def candidate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]
     source = {"project_root_digest": "1" * 64, "bootstrap_digest": "2" * 64, "base_lock_digest": "3" * 64}
     monkeypatch.setattr(promote, "__file__", str(project / "scripts" / "promote_v01.py"))
     monkeypatch.setattr(promote, "reference_source_identity", lambda path: dict(source))
-    spec = "# Synthetic promotion unit fixture\n\n```yaml\n" + "\n".join(f"{key}: {value}" for key, value in promote.RELEASED_AXES.items()) + "\n```\n"
+    spec_lines = [
+        f"status: {FROZEN_SPEC_AXES['status']}",
+        f"spec_status: {FROZEN_SPEC_AXES['spec_status']}",
+        f"release_stage: {FROZEN_SPEC_AXES['release_stage']}",
+        f"qualification_tier: {FROZEN_SPEC_AXES['qualification_tier']}",
+        "qualification_profiles:",
+    ]
+    for profile_id, facts in FROZEN_SPEC_PROFILES.items():
+        spec_lines.extend((f"  - profile_id: {profile_id}", f"    result: {facts['result']}", f"    reason: {facts['reason']}"))
+    spec_lines.extend((
+        f"performance_outcome: {FROZEN_SPEC_AXES['performance_outcome']}",
+        f"lts_state: {FROZEN_SPEC_AXES['lts_state']}",
+        f"spec_version: {FROZEN_SPEC_AXES['spec_version']}",
+        f"target_release: {FROZEN_SPEC_AXES['target_release']}",
+    ))
+    spec = ("# Synthetic promotion unit fixture\n\n```yaml\n" + "\n".join(spec_lines)
+            + "\n```\n\n## 12. Definition of Done\n\n### 12.1 Must\n\n- [ ] synthetic gate\n\n"
+              "### 12.2 Conditional\n\n- [ ] synthetic conditional gate\n")
     (project / promote.SPEC).parent.mkdir(parents=True)
     (project / promote.SPEC).write_text(spec, encoding="utf-8")
     root.mkdir(parents=True)
@@ -74,6 +93,10 @@ def test_promotion_changes_only_four_generated_files_and_reverifies(candidate: d
     assert len(candidate["verified"]) == 2
     assert candidate["verified"][0]["release_stage"] == "release_candidate"
     assert (candidate["project"] / promote.SPEC).read_bytes() == spec_before
+    assert (root / "spec.md").read_bytes() == spec_before
+    snapshot = verify_frozen_v01_spec(root / "spec.md")
+    assert snapshot["axes"]["qualification_tier"] == "unqualified"
+    assert all(profile["result"] == "not_run" for profile in snapshot["qualification_profiles"].values())
 
 
 def test_already_released_is_verified_noop_without_rewriting_files(candidate: dict[str, Any]) -> None:
@@ -85,17 +108,24 @@ def test_already_released_is_verified_noop_without_rewriting_files(candidate: di
     assert len(candidate["verified"]) == 3
 
 
-@pytest.mark.parametrize("mutation", ["accepted", "comment-only", "duplicate", "copied-spec-only"])
-def test_unreleased_or_unbound_frozen_spec_never_writes_metadata(candidate: dict[str, Any], mutation: str) -> None:
+@pytest.mark.parametrize("mutation", ["draft", "released-target", "duplicate", "profile-pass", "wrong-spec-version",
+                                      "checked-dod", "copied-spec-only"])
+def test_non_snapshot_or_unbound_frozen_spec_never_writes_metadata(candidate: dict[str, Any], mutation: str) -> None:
     path = candidate["project"] / promote.SPEC
     spec = path.read_text(encoding="utf-8")
-    if mutation == "accepted":
-        spec = spec.replace("spec_status: released", "spec_status: accepted")
-    elif mutation == "comment-only":
-        spec = spec.replace("release_stage: released", "release_stage: dev_snapshot # release_stage: released")
+    if mutation == "draft":
+        spec = spec.replace("spec_status: implemented", "spec_status: draft")
+    elif mutation == "released-target":
+        spec = spec.replace("release_stage: dev_snapshot", "release_stage: released # release_stage: dev_snapshot")
     elif mutation == "duplicate":
-        spec = spec.replace("spec_status: released", "spec_status: released\nspec_status: accepted")
-    else:
+        spec = spec.replace("spec_status: implemented", "spec_status: implemented\nspec_status: released")
+    elif mutation == "profile-pass":
+        spec = spec.replace("    result: not_run", "    result: pass", 1)
+    elif mutation == "wrong-spec-version":
+        spec = spec.replace(f"spec_version: {FROZEN_SPEC_AXES['spec_version']}", "spec_version: 999")
+    elif mutation == "checked-dod":
+        spec = spec.replace("- [ ] synthetic gate", "- [x] synthetic gate")
+    elif mutation == "copied-spec-only":
         spec += "\nChanged source not qualified by the candidate.\n"
     path.write_text(spec, encoding="utf-8")
     if mutation != "copied-spec-only":

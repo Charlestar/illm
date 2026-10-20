@@ -22,8 +22,8 @@ from illm.domain.errors import ErrorCode, IllmError
 from illm.domain.reference_events import ReferenceEventKind as K
 from illm.model.spec import SupportedModelSpec
 from illm.reference_qualification import (
-    CRITICAL_TESTS, RUNTIME_LOCKS, TINY_FILES, _canonical_shape, _compound_fault, _inventory, _op_order, _oracle_contract,
-    _source_provenance, _tiny_fault, _tolerances, create_reference_profile_evidence,
+    CRITICAL_TESTS, FORMAL_PROFILE_RUNTIMES, RUNTIME_LOCKS, TINY_FILES, _canonical_shape, _compound_fault, _inventory,
+    _op_order, _oracle_contract, _source_provenance, _tiny_fault, _tolerances, create_reference_profile_evidence,
     verify_reference_profile_evidence,
 )
 from illm.sampling import SamplingSpec
@@ -193,15 +193,7 @@ def _benchmark(path: Path, toolchain: dict[str, Any], identity: dict[str, Any]) 
     (path / "COMPLETE").touch()
 
 
-@pytest.fixture(scope="module")
-def base_sealed(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    tmp_path = tmp_path_factory.mktemp("reference-qualification-unit-inputs")
-    inputs = tmp_path / "inputs"
-    inputs.mkdir()
-    provenance = _source_provenance(ROOT)
-    # Unit fixture uses the real pinned closure metadata, not an installed-env claim.
-    runtime_id = "py312-win-amd64-cpu"
-    runtime = _read(ROOT / "runtime" / "artifacts" / f"{runtime_id}.json")
+def _locked_versions(provenance: dict[str, Any], runtime: dict[str, Any]) -> dict[str, str]:
     versions: dict[str, str] = {}
     import re
 
@@ -212,9 +204,22 @@ def base_sealed(tmp_path_factory: pytest.TempPathFactory) -> Path:
                 versions[re.sub(r"[-_.]+", "-", match[1]).lower()] = match[2]
     versions.update({item["name"]: item["version"] for item in runtime["artifacts"]})
     versions["illm"] = provenance["project_version"]
+    return versions
+
+
+def _build_cpu_profile(tmp_path: Path, *, profile_id: str, runtime_id: str) -> Path:
+    inputs = tmp_path / "inputs"
+    inputs.mkdir()
+    provenance = _source_provenance(ROOT)
+    # Unit fixture uses the real pinned closure metadata, not an installed-env claim.
+    runtime = _read(ROOT / "runtime" / "artifacts" / f"{runtime_id}.json")
+    versions = _locked_versions(provenance, runtime)
     source = provenance["source_identity"]
+    system = str(runtime["target"]["os"])
+    arch = {"Windows": "AMD64", "Linux": "x86_64"}[system]
     toolchain = {"schema_version": 1, "finalized": True, "profile": "unit-fixture-not-real-qualification",
-                 "os": "Windows", "arch": "AMD64", "python_version": "3.12.14", "project_root": str(ROOT),
+                 "os": system, "arch": arch, "python_version": runtime["target"]["python_validation_patch"],
+                 "project_root": str(ROOT),
                  "environment_root": "/absent/unit-only/environment", "python_executable": "/absent/unit-only/python",
                  "entrypoints": {"illm": "/absent/unit-only/illm"}, "environment_id": "unit-only-not-installed",
                  "project_root_digest": source["project_root_digest"], "bootstrap_digest": source["bootstrap_digest"],
@@ -222,7 +227,8 @@ def base_sealed(tmp_path_factory: pytest.TempPathFactory) -> Path:
                  "runtime_profile_id": runtime_id, "runtime_lock_digest": RUNTIME_LOCKS[runtime_id], "artifact_cache": "/absent/unit-only/cache",
                  "installed_packages": dict(sorted(versions.items())),
                  "runtime_artifacts": [{key: item[key] for key in ("name", "version", "filename", "sha256", "size_bytes")} for item in runtime["artifacts"]],
-                 "runtime_probe": {"torch": "2.8.0+cpu", "transformers": "4.57.1", "safetensors": "0.6.2", "tokenizers": "0.22.1",
+                 "runtime_probe": {"torch": versions["torch"], "transformers": versions["transformers"],
+                                   "safetensors": versions["safetensors"], "tokenizers": versions["tokenizers"],
                                    "device": "cpu", "cuda_build": None, "gpu_name": None, "device_capability": None, "compiled_arches": [], "smoke_sum": 3.0}}
     _signed(inputs / "toolchain.json", toolchain, "manifest_digest")
     suite = ET.Element("testsuite", tests=str(len(CRITICAL_TESTS)), failures="0", errors="0", skipped="0", time="1.0")
@@ -246,20 +252,46 @@ def base_sealed(tmp_path_factory: pytest.TempPathFactory) -> Path:
                 "input_spec_digest": "e" * 64, "runtime_dtype": "fp32", "device": "cpu", "backend": "illm_eager"}
     _capture(inputs / "capture", identity, "unit-synthetic-capture", 8)
     _benchmark(inputs / "benchmark", toolchain, identity)
-    output = tmp_path / "sealed-unit-fixture"
+    clean_room_report = _write_gate(inputs) if profile_id == "clean-room-release-v1" else None
+    output = tmp_path / f"sealed-{profile_id}"
     with patch("illm.reference_qualification._assert_live_environment", return_value=provenance):
-        create_reference_profile_evidence(profile_id="tiny-reference-cpu-v1", toolchain_manifest=inputs / "toolchain.json",
+        create_reference_profile_evidence(profile_id=profile_id, toolchain_manifest=inputs / "toolchain.json",
                                           junit=inputs / "junit.xml", quality=inputs / "quality.json", capture=inputs / "capture",
                                           validation_directories=[inputs / "validation"], benchmark=inputs / "benchmark",
                                           sampler_fixture=ROOT / "fixtures" / "sampling" / "sampler-known-answer-v1.json", output=output,
-                                          expected_source_identity=source)
+                                          expected_source_identity=source, clean_room_report=clean_room_report)
     return output
+
+
+@pytest.fixture(scope="module")
+def base_sealed(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return _build_cpu_profile(
+        tmp_path_factory.mktemp("reference-qualification-windows-unit-inputs"),
+        profile_id="tiny-reference-cpu-v1",
+        runtime_id="py312-win-amd64-cpu",
+    )
+
+
+@pytest.fixture(scope="module")
+def base_cleanroom_sealed(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return _build_cpu_profile(
+        tmp_path_factory.mktemp("reference-qualification-linux-unit-inputs"),
+        profile_id="clean-room-release-v1",
+        runtime_id="py312-linux-x86_64-cpu",
+    )
 
 
 @pytest.fixture
 def sealed(base_sealed: Path, tmp_path: Path) -> Path:
     result = tmp_path / "sealed-unit-fixture"
     shutil.copytree(base_sealed, result)
+    return result
+
+
+@pytest.fixture
+def cleanroom_sealed(base_cleanroom_sealed: Path, tmp_path: Path) -> Path:
+    result = tmp_path / "sealed-cleanroom-unit-fixture"
+    shutil.copytree(base_cleanroom_sealed, result)
     return result
 
 
@@ -286,6 +318,14 @@ def test_reference_profile_roundtrip_is_portable_and_source_bound(sealed: Path, 
     with pytest.raises(IllmError) as raised:
         verify_reference_profile_evidence(moved, expected_source_identity=wrong)
     assert raised.value.code is ErrorCode.TOOLCHAIN_MISMATCH
+
+
+def test_formal_profiles_pin_distinct_exact_runtime_platforms() -> None:
+    assert FORMAL_PROFILE_RUNTIMES == {
+        "tiny-reference-cpu-v1": "py312-win-amd64-cpu",
+        "clean-room-release-v1": "py312-linux-x86_64-cpu",
+        "real-model-single-gpu-v1": "py312-linux-x86_64-cu126",
+    }
 
 
 def test_ci_only_runtime_cannot_grant_formal_release_qualification(sealed: Path) -> None:
@@ -343,7 +383,11 @@ def test_resigned_incomplete_or_semantically_invalid_profile_is_rejected(sealed:
         _resign(sealed)
     elif mutation == "fake-final-package":
         value = _read(sealed / "source-provenance.json")
-        value["project_version"] = "0.1.0"
+        original_version = value["project_version"]
+        # Keep this a real mutation after the source moves from development to
+        # the final version; assigning 0.1.0 unconditionally becomes a no-op.
+        value["project_version"] = "0.1.0.dev0" if original_version == "0.1.0" else "0.1.0"
+        assert value["project_version"] != original_version
         _write(sealed / "source-provenance.json", value)
         _resign(sealed)
     elif mutation == "gpu-label":
@@ -476,25 +520,24 @@ def test_benchmark_telemetry_guardrails_reject_fully_resigned_semantic_changes(s
         verify_reference_profile_evidence(sealed)
 
 
-def test_cleanroom_profile_cannot_be_claimed_without_phase_transcripts(sealed: Path) -> None:
-    profile, index = _read(sealed / "profile-result.json"), _read(sealed / "evidence-index.json")
-    profile["profile_id"] = index["profile_id"] = "clean-room-release-v1"
-    _write(sealed / "profile-result.json", profile)
-    _write(sealed / "evidence-index.json", index)
-    _resign(sealed)
+def test_cleanroom_profile_cannot_be_claimed_without_phase_transcripts(cleanroom_sealed: Path) -> None:
+    shutil.rmtree(cleanroom_sealed / "gate")
+    _resign(cleanroom_sealed)
     with pytest.raises(IllmError):
-        verify_reference_profile_evidence(sealed)
+        verify_reference_profile_evidence(cleanroom_sealed)
 
 
-def _add_gate(root: Path) -> None:
+def _write_gate(root: Path) -> Path:
     """Synthetic transcript fixture for validating cross-artifact semantics only."""
     gate = root / "gate"
     toolchain = _read(root / "toolchain.json")
-    validation = _read(root / "validation" / "model-0" / "validation-report.json")
+    validation_root = root / "validation"
+    validation_directory = validation_root / "model-0" if (validation_root / "model-0").is_dir() else validation_root
+    validation = _read(validation_directory / "validation-report.json")
     capture = _read(root / "capture" / "capture-manifest.json")
     state = _read(root / "capture" / "checkpoint.json")
-    spec = _read(root / "validation" / "model-0" / "model-spec.json")
-    weights = _read(root / "validation" / "model-0" / "weight-load-manifest.json")
+    spec = _read(validation_directory / "model-spec.json")
+    weights = _read(validation_directory / "weight-load-manifest.json")
     benchmark = _read(root / "benchmark" / "benchmark-report.json")
     cases = len(CRITICAL_TESTS)
     results: dict[str, Any] = {
@@ -526,10 +569,16 @@ def _add_gate(root: Path) -> None:
                          "stdout_file": stdout.relative_to(gate).as_posix(), "stderr_file": stderr.relative_to(gate).as_posix(),
                          "stdout_sha256": sha256_file(stdout), "stderr_sha256": sha256_file(stderr)})
     report = {"schema_version": 1, "status": "pass", "toolchain_manifest_digest": toolchain["manifest_digest"],
-              "source_identity": _read(root / "evidence-index.json")["source_identity"], "fresh_environment": True,
+              "source_identity": _read(root / "source-provenance.json")["source_identity"], "fresh_environment": True,
               "offline_bootstrap": True, "network_used": "not_observed", "network_blocking": "not_enforced",
               "network_policy": "offline_resolution_and_local_model_only", "commands": commands}
-    _signed(gate / "gate-report.json", report, "report_digest")
+    report_path = gate / "gate-report.json"
+    _signed(report_path, report, "report_digest")
+    return report_path
+
+
+def _add_gate(root: Path) -> None:
+    _write_gate(root)
     profile, index = _read(root / "profile-result.json"), _read(root / "evidence-index.json")
     profile["profile_id"] = index["profile_id"] = "clean-room-release-v1"
     _write(root / "profile-result.json", profile)
@@ -537,16 +586,43 @@ def _add_gate(root: Path) -> None:
     _resign(root)
 
 
-def test_cleanroom_transcripts_must_bind_actual_artifact_results(sealed: Path) -> None:
+def test_sealer_rejects_linux_cpu_runtime_mislabelled_as_tiny(
+    cleanroom_sealed: Path, tmp_path: Path,
+) -> None:
+    provenance = _read(cleanroom_sealed / "source-provenance.json")
+    with patch("illm.reference_qualification._assert_live_environment", return_value=provenance):
+        with pytest.raises(IllmError, match="requires exact formal runtime py312-win-amd64-cpu") as raised:
+            create_reference_profile_evidence(
+                profile_id="tiny-reference-cpu-v1",
+                toolchain_manifest=cleanroom_sealed / "toolchain.json",
+                junit=cleanroom_sealed / "junit.xml",
+                quality=cleanroom_sealed / "quality.json",
+                capture=cleanroom_sealed / "capture",
+                validation_directories=[cleanroom_sealed / "validation" / "model-0"],
+                benchmark=cleanroom_sealed / "benchmark",
+                sampler_fixture=cleanroom_sealed / "sampling" / "known-answer.json",
+                output=tmp_path / "forbidden-linux-tiny",
+                expected_source_identity=provenance["source_identity"],
+            )
+    assert raised.value.code is ErrorCode.TOOLCHAIN_MISMATCH
+
+
+def test_portable_reader_rejects_windows_runtime_resigned_as_cleanroom(sealed: Path) -> None:
     _add_gate(sealed)
-    assert verify_reference_profile_evidence(sealed)[0]["profile_id"] == "clean-room-release-v1"
-    report_path = sealed / "gate" / "gate-report.json"
+    with pytest.raises(IllmError, match="requires exact formal runtime py312-linux-x86_64-cpu") as raised:
+        verify_reference_profile_evidence(sealed)
+    assert raised.value.code is ErrorCode.TOOLCHAIN_MISMATCH
+
+
+def test_cleanroom_transcripts_must_bind_actual_artifact_results(cleanroom_sealed: Path) -> None:
+    assert verify_reference_profile_evidence(cleanroom_sealed)[0]["profile_id"] == "clean-room-release-v1"
+    report_path = cleanroom_sealed / "gate" / "gate-report.json"
     report = _read(report_path)
     command = next(item for item in report["commands"] if item["phase"] == "validate")
     transcript = report_path.parent / command["stdout_file"]
     transcript.write_text('{"status":"pass"}', encoding="utf-8")
     command["stdout_sha256"] = sha256_file(transcript)
     _signed(report_path, report, "report_digest")
-    _resign(sealed)
+    _resign(cleanroom_sealed)
     with pytest.raises(IllmError, match="transcript does not bind"):
-        verify_reference_profile_evidence(sealed)
+        verify_reference_profile_evidence(cleanroom_sealed)

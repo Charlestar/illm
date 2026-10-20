@@ -3,8 +3,9 @@
 Each completed version has an annotated immutable tag, a runnable demo, a
 Version SPEC, a teach-back, and a verified evidence bundle. Work toward later
 versions stays visible on `main`; a planned version has no release tag.
-The table names intended checkpoints; verify the remote tag and bundle before
-treating a source tree or its prepared release metadata as published.
+The table names intended checkpoints. A frozen source SPEC remains a factual
+pre-gate snapshot; verify the remote tag and evidence-derived bundle manifest
+before treating any source tree as qualified or published.
 
 | Checkpoint | New concept | Tag / progress | Reading |
 |---|---|---|---|
@@ -23,7 +24,7 @@ git fetch origin --tags
 git switch --detach v0.0.0
 python scripts/bootstrap.py --profile study-v00 --locked --write-manifest out/study-v00/toolchain.json --write-manifest-digest out/study-v00/toolchain.sha256
 python scripts/in_env.py --manifest out/study-v00/toolchain.json --expected-manifest-digest-file out/study-v00/toolchain.sha256 -- python -m illm demo toy-scheduler --seed 7 --steps 20 --capture out/study-v00/capture
-python scripts/in_env.py --manifest out/study-v00/toolchain.json --expected-manifest-digest-file out/study-v00/toolchain.sha256 -- python -m illm replay out/study-v00/capture --mode trace --step 0
+python scripts/in_env.py --manifest out/study-v00/toolchain.json --expected-manifest-digest-file out/study-v00/toolchain.sha256 -- python -m illm replay out/study-v00/capture --mode trace --step-id 0
 python scripts/in_env.py --manifest out/study-v00/toolchain.json --expected-manifest-digest-file out/study-v00/toolchain.sha256 -- python -m illm replay out/study-v00/capture --mode state --assert-state-digest
 python scripts/in_env.py --manifest out/study-v00/toolchain.json --expected-manifest-digest-file out/study-v00/toolchain.sha256 -- python -m illm release verify release/v0.0.0/manifest.json
 git switch main

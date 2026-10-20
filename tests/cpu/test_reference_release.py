@@ -21,8 +21,8 @@ from illm.domain.errors import ErrorCode, IllmError
 from illm.domain.reference_events import ReferenceEventKind as K
 from illm.reference_qualification import PROFILES, _fs, _inventory, verify_reference_profile_evidence
 from illm.reference_release import (
-    DOCUMENTS, DOCUMENT_SOURCES, PRIMARY, _state, build_reference_release_bundle,
-    verify_reference_release_bundle,
+    DOCUMENTS, DOCUMENT_SOURCES, FROZEN_SPEC_AXES, FROZEN_SPEC_PROFILES, PRIMARY, _state,
+    build_reference_release_bundle, verify_frozen_v01_spec, verify_reference_release_bundle,
 )
 from illm.sampling import SamplingSpec
 from illm.reference_learning import LEARNING_DIRECTORY, LEARNING_FILES, derive_reference_learning_assets
@@ -42,6 +42,28 @@ def _write(path: Path, value: dict[str, Any]) -> None:
 def _sign(path: Path, value: dict[str, Any], field: str) -> None:
     value[field] = sha256_json({key: item for key, item in value.items() if key != field})
     _write(path, value)
+
+
+def _frozen_spec_text() -> str:
+    lines = [
+        f"status: {FROZEN_SPEC_AXES['status']}",
+        f"spec_status: {FROZEN_SPEC_AXES['spec_status']}",
+        f"release_stage: {FROZEN_SPEC_AXES['release_stage']}",
+        f"qualification_tier: {FROZEN_SPEC_AXES['qualification_tier']}",
+        "qualification_profiles:",
+    ]
+    for profile_id, facts in FROZEN_SPEC_PROFILES.items():
+        lines.extend((f"  - profile_id: {profile_id}", f"    result: {facts['result']}", f"    reason: {facts['reason']}"))
+    lines.extend((
+        f"performance_outcome: {FROZEN_SPEC_AXES['performance_outcome']}",
+        f"lts_state: {FROZEN_SPEC_AXES['lts_state']}",
+        f"spec_version: {FROZEN_SPEC_AXES['spec_version']}",
+        f"target_release: {FROZEN_SPEC_AXES['target_release']}",
+    ))
+    return ("# Publisher unit fixture spec.md\nThis is a frozen source snapshot, not release evidence.\n\n```yaml\n"
+            + "\n".join(lines)
+            + "\n```\n\n## 12. Definition of Done\n\n### 12.1 Must\n\n- [ ] source-bound gates\n\n"
+              "### 12.2 Conditional\n\n- [ ] conditional source-bound gate\n")
 
 
 def _learning_unit_validation(directory: Path) -> None:
@@ -120,7 +142,7 @@ def inputs(tmp_path: Path) -> dict[str, Any]:
     for name in DOCUMENTS:
         text = (f"# Publisher unit fixture {name}\nThis is deliberately synthetic text for portable publisher boundary tests, not a release claim.\n")
         if name == "spec.md":
-            text += "target_release: v0.1.0\nspec_status: released\nrelease_stage: released\n## 12. Definition of Done\n"
+            text = _frozen_spec_text()
         (docs / name).write_text(text, encoding="utf-8")
     doc_hashes = {DOCUMENT_SOURCES[name]: sha256_file(docs / name) for name in DOCUMENTS}
     evidence: list[Path] = []
@@ -189,11 +211,35 @@ def test_complete_candidate_derives_test_counts_and_omits_local_only_work(assemb
     assert set(reports) == PROFILES
     assert all(report["tests"] == 1 and report["failures"] == 0 for report in reports.values())
     assert {path.name for path in (assembled / LEARNING_DIRECTORY).iterdir()} == LEARNING_FILES
+    frozen_spec = (assembled / "spec.md").read_bytes()
     manifest = _read(assembled / "manifest.json")
     manifest.update(spec_status="released", release_stage="released")
     _write(assembled / "manifest.json", manifest)
     _resign(assembled, update_state=True)
     assert verify_reference_release_bundle(assembled / "manifest.json")["release_stage"] == "released"
+    assert (assembled / "spec.md").read_bytes() == frozen_spec
+
+
+def test_frozen_spec_reader_rejects_target_state_and_checked_acceptance(tmp_path: Path) -> None:
+    path = tmp_path / "spec.md"
+    source = _frozen_spec_text()
+    path.write_text(source, encoding="utf-8")
+    verify_frozen_v01_spec(path)
+    for mutated in (
+        source.replace("release_stage: dev_snapshot", "release_stage: released"),
+        source.replace("    result: not_run", "    result: pass", 1),
+        source.replace("- [ ] source-bound gates", "- [x] source-bound gates"),
+    ):
+        path.write_text(mutated, encoding="utf-8")
+        with pytest.raises(IllmError):
+            verify_frozen_v01_spec(path)
+
+
+def test_repository_v01_spec_is_the_frozen_pre_gate_snapshot() -> None:
+    path = Path(__file__).resolve().parents[2] / "docs" / "specs" / "versions" / "v0.1-reference-runner.md"
+    result = verify_frozen_v01_spec(path)
+    assert result["axes"]["release_stage"] == "dev_snapshot"
+    assert all(profile["result"] == "not_run" for profile in result["qualification_profiles"].values())
 
 
 @pytest.mark.parametrize("mutation", ["missing-profile", "status-only", "mixed-source", "checksum", "rollback-development", "fake-version", "fake-test-count", "missing-document", "path-traversal", "local-only", "stale-state", "speedup-claim"])

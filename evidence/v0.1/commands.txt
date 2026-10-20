@@ -32,14 +32,19 @@ Copy-Item evidence/v0.1/release-notes.md out/v01-release-documents/release-notes
 Copy-Item docs/specs/versions/v0.1-reference-runner.md out/v01-release-documents/spec.md
 
 # The publisher derives portable facts and static learning diagrams; it does not
-# create a tag. Promotion verifies the complete candidate and frozen source again.
+# create a tag. The embedded SPEC remains the byte-identical implemented/dev-snapshot
+# source fact with not-run profiles. The candidate manifest alone derives the three
+# actual passes and functional qualification. Promotion reverifies both, then changes
+# only generated manifest metadata; it never rewrites the SPEC or asks it to preclaim pass.
 python scripts/in_env.py --manifest out/v01-final-cpu/toolchain.json --expected-manifest-digest-file out/v01-final-cpu/toolchain.sha256 -- python scripts/build_v01_release.py --evidence-root out/v01-final-cpu/qualification --evidence-root out/v01-final-gpu/qualification --evidence-root out/v01-final-clean/qualification --rollback out/v01-final-rollback --documentation-root out/v01-release-documents --output release/v0.1.0
 python scripts/in_env.py --manifest out/v01-final-cpu/toolchain.json --expected-manifest-digest-file out/v01-final-cpu/toolchain.sha256 -- python scripts/promote_v01.py --release-dir release/v0.1.0
-python scripts/in_env.py --manifest out/v01-final-cpu/toolchain.json --expected-manifest-digest-file out/v01-final-cpu/toolchain.sha256 -- python -m illm release verify release/v0.1.0/manifest.json
+python scripts/in_env.py --manifest out/v01-final-cpu/toolchain.json --expected-manifest-digest-file out/v01-final-cpu/toolchain.sha256 -- python -m illm release verify release/v0.1.0/manifest.json --require-current-source
 
-# Only after committing the frozen source/bundle and independently successful CI:
-# git tag -a v0.1.0 <verified-commit> -m "V0.1 Reference Runner; manifest <verified-digest>"
+# Commit and push the verified bundle without changing the frozen source:
 # git push origin main
+# Wait for all required CI jobs on that exact commit, including current-source
+# bundle verification. Only then create the annotated immutable learning tag:
+# git tag -a v0.1.0 <verified-commit> -m "V0.1 Reference Runner; manifest <verified-digest>"
 # git push origin v0.1.0
 # git ls-remote origin refs/tags/v0.1.0 refs/tags/v0.1.0^{}
 # Never use --force or move an existing learning checkpoint.

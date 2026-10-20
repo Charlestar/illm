@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from illm import cli as cli_module
 from illm.canonical import sha256_json
 from illm.capture.reference import ReferenceCaptureSession
 from illm.cli import main
@@ -109,6 +110,58 @@ def test_release_cli_dispatches_v1_without_guessing_v0(
     monkeypatch.setattr(reference_release, "verify_reference_release_bundle", unit_dispatch_only)
     assert main(["release", "verify", str(path)]) == 0
     assert json.loads(capsys.readouterr().out)["unit_dispatch_only"] is True
+
+
+def test_release_cli_can_require_the_current_checkout_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    from illm import reference_release
+
+    path = tmp_path / "manifest.json"
+    path.write_text('{"schema_version":1}', encoding="utf-8")
+    expected = {name: sha256_json(name) for name in ("project_root_digest", "bootstrap_digest", "base_lock_digest")}
+
+    def current_source(actual: Path) -> dict[str, str]:
+        assert actual == tmp_path.resolve()
+        return expected
+
+    def source_bound_dispatch(actual: Path, *, expected_source_identity: object = None) -> dict[str, Any]:
+        assert actual == path and expected_source_identity == expected
+        return {"schema_version": 1, "source_bound_dispatch": True}
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_module, "reference_source_identity", current_source)
+    monkeypatch.setattr(reference_release, "verify_reference_release_bundle", source_bound_dispatch)
+    assert main(["release", "verify", str(path), "--require-current-source"]) == 0
+    assert json.loads(capsys.readouterr().out)["source_bound_dispatch"] is True
+
+
+def test_current_source_flag_is_v01_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    from illm import reference_release
+
+    path = tmp_path / "manifest.json"
+    path.write_text('{"schema_version":0}', encoding="utf-8")
+    expected = {name: sha256_json(name) for name in ("project_root_digest", "bootstrap_digest", "base_lock_digest")}
+
+    def v01_only(actual: Path, *, expected_source_identity: object = None) -> dict[str, Any]:
+        assert actual == path and expected_source_identity == expected
+        raise IllmError(ErrorCode.UNSUPPORTED_SCHEMA, "V0.1 verifier rejects schema0")
+
+    monkeypatch.setattr(cli_module, "reference_source_identity", lambda _: expected)
+    monkeypatch.setattr(reference_release, "verify_reference_release_bundle", v01_only)
+    assert main(["release", "verify", str(path), "--require-current-source"]) == 78
+    assert json.loads(capsys.readouterr().err)["code"] == "UNSUPPORTED_SCHEMA"
+
+
+def test_ci_binds_only_the_v01_bundle_to_the_current_checkout() -> None:
+    workflow = (Path(__file__).resolve().parents[2] / ".github" / "workflows" / "cpu.yml").read_text(encoding="utf-8")
+    commands = [line.strip() for line in workflow.splitlines() if "illm release verify release/" in line]
+    v01 = [line for line in commands if "release/v0.1.0/manifest.json" in line]
+    historical = [line for line in commands if "release/v0.0.0/manifest.json" in line]
+    assert len(v01) == 1 and "--require-current-source" in v01[0]
+    assert historical and all("--require-current-source" not in line for line in historical)
 
 
 def test_release_dispatch_rejects_duplicate_version_discriminator(tmp_path: Path) -> None:

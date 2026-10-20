@@ -11,6 +11,7 @@ from typing import NoReturn, Sequence
 from illm.canonical import canonical_json_text
 from illm.capture import CaptureBundle
 from illm.domain.errors import EXIT_CODE, ErrorCode, IllmError
+from illm.reference_qualification import reference_source_identity
 from illm.release import verify_release_bundle, write_verified_release_state
 from illm.replay import replay_events
 from illm.toy import run_toy_scheduler
@@ -73,6 +74,7 @@ def _parser() -> IllmArgumentParser:
     verify = release_subparsers.add_parser("verify")
     verify.add_argument("manifest", type=Path)
     verify.add_argument("--output", type=Path)
+    verify.add_argument("--require-current-source", action="store_true")
     return parser
 
 
@@ -239,7 +241,15 @@ def _generate(args: argparse.Namespace) -> int:
 
 
 def _release_verify(args: argparse.Namespace) -> int:
-    result = verify_release_bundle(args.manifest)
+    if args.require_current_source:
+        from illm.reference_release import verify_reference_release_bundle
+
+        result = verify_reference_release_bundle(
+            args.manifest,
+            expected_source_identity=reference_source_identity(Path.cwd()),
+        )
+    else:
+        result = verify_release_bundle(args.manifest)
     if args.output:
         write_verified_release_state(result, args.output)
     print(canonical_json_text(result))

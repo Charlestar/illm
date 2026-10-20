@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import tomllib
 from pathlib import Path
@@ -36,6 +37,21 @@ MANIFEST_FIELDS = {
     "qualification_profiles", "performance_outcome", "lts_state", "source_identity", "primary_profile_id",
     "toolchain_manifest_digest", "capture_manifest_digest", "test_report_digest", "benchmark_report_digest",
     "rollback_report_digest", "documentation_digest", "manifest_digest",
+}
+FROZEN_SPEC_AXES = {
+    "status": "implemented",
+    "spec_status": "implemented",
+    "release_stage": "dev_snapshot",
+    "qualification_tier": "unqualified",
+    "performance_outcome": "not_applicable",
+    "lts_state": "not_applicable",
+    "spec_version": "4",
+    "target_release": TAG,
+}
+FROZEN_SPEC_PROFILES = {
+    "tiny-reference-cpu-v1": {"result": "not_run", "reason": "final_source_bound_gate_pending"},
+    "real-model-single-gpu-v1": {"result": "not_run", "reason": "final_source_bound_gate_pending"},
+    "clean-room-release-v1": {"result": "not_run", "reason": "final_source_bound_gate_pending"},
 }
 
 
@@ -103,6 +119,54 @@ def _test_report(profiles: Mapping[str, Path]) -> dict[str, Any]:
     return report
 
 
+def verify_frozen_v01_spec(path: Path) -> dict[str, Any]:
+    """Verify the source-time SPEC snapshot without treating it as release evidence."""
+    text = path.read_text(encoding="utf-8")
+    metadata = re.search(r"(?ms)^```yaml[ \t]*\r?\n(.*?)^```[ \t]*\r?$", text)
+    if metadata is None:
+        _fail("V0.1 source SPEC must contain a leading metadata block")
+    block = metadata[1]
+    axes: dict[str, str] = {}
+    for line in block.splitlines():
+        match = re.fullmatch(r"([a-z_]+):[ \t]*([^#]*?)[ \t]*(?:#.*)?", line)
+        if match is None:
+            continue
+        key, value = match.groups()
+        if key in axes:
+            _fail("V0.1 source SPEC has duplicate top-level metadata")
+        axes[key] = value.strip()
+    if any(axes.get(key) != value for key, value in FROZEN_SPEC_AXES.items()):
+        _fail("V0.1 source SPEC must remain an implemented, unqualified pre-gate snapshot")
+    profiles: dict[str, dict[str, str]] = {}
+    lines = block.splitlines()
+    for index, line in enumerate(lines):
+        match = re.fullmatch(r"  - profile_id:[ \t]*([a-z0-9-]+)[ \t]*", line)
+        if match is None:
+            continue
+        profile_id = match[1]
+        if profile_id in profiles:
+            _fail("V0.1 source SPEC has a duplicate qualification profile")
+        fields: dict[str, str] = {}
+        cursor = index + 1
+        while cursor < len(lines):
+            field = re.fullmatch(r"    ([a-z_]+):[ \t]*([^#]*?)[ \t]*(?:#.*)?", lines[cursor])
+            if field is None:
+                break
+            if field[1] in fields:
+                _fail("V0.1 source SPEC qualification profile has duplicate fields")
+            fields[field[1]] = field[2].strip()
+            cursor += 1
+        profiles[profile_id] = fields
+    if profiles != FROZEN_SPEC_PROFILES:
+        _fail("V0.1 source SPEC profiles must remain explicit not-run pre-gate facts")
+    if "## 12. Definition of Done" not in text or "### 12.1 Must" not in text or "### 12.2 Conditional" not in text:
+        _fail("V0.1 source SPEC is incomplete")
+    definition_of_done = text.split("## 12. Definition of Done", 1)[1]
+    if re.search(r"(?mi)^- \[x\]", definition_of_done):
+        _fail("V0.1 source SPEC cannot pre-check final acceptance before source-bound gates")
+    return {"axes": axes, "qualification_profiles": profiles}
+
+
 def _verify_documentation(root: Path, primary: Path, state: Mapping[str, Any]) -> None:
     index = _object(root / "documentation-index.json")
     _signed(index, "documentation_digest")
@@ -119,11 +183,7 @@ def _verify_documentation(root: Path, primary: Path, state: Mapping[str, Any]) -
         text = path.read_text(encoding="utf-8")
         if len(text.strip()) < 40 or "\0" in text:
             _fail("required release learning document is empty or not text")
-    spec = (root / "spec.md").read_text(encoding="utf-8")
-    if "target_release: v0.1.0" not in spec or "## 12. Definition of Done" not in spec:
-        _fail("release SPEC is not the complete V0.1 contract")
-    if state["release_stage"] == "released" and ("spec_status: released" not in spec or "release_stage: released" not in spec):
-        _fail("published V0.1 SPEC is not in the frozen released state")
+    verify_frozen_v01_spec(root / "spec.md")
 
 
 def _verify_rollback(root: Path, source: Mapping[str, str], primary: Path, state: Mapping[str, Any]) -> None:

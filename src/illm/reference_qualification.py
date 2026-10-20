@@ -32,7 +32,12 @@ from illm.qualification import parse_junit
 from illm.sampling import SamplingSpec, SamplingState, commit_sample, philox4x32_10, prepare_sample
 
 
-PROFILES = {"tiny-reference-cpu-v1", "real-model-single-gpu-v1", "clean-room-release-v1"}
+FORMAL_PROFILE_RUNTIMES = {
+    "tiny-reference-cpu-v1": "py312-win-amd64-cpu",
+    "clean-room-release-v1": "py312-linux-x86_64-cpu",
+    "real-model-single-gpu-v1": "py312-linux-x86_64-cu126",
+}
+PROFILES = set(FORMAL_PROFILE_RUNTIMES)
 SOURCE_FIELDS = {"project_root_digest", "bootstrap_digest", "base_lock_digest"}
 RUNTIME_LOCKS = {
     "py312-win-amd64-cpu": "5149ad41ff2e0f261fbec8fe11dcefe2bed90ab8431b1c5339b8e08b59320a34",
@@ -804,6 +809,12 @@ def _verify_facts(root: Path, profile_id: str, expected: Mapping[str, str] | Non
         _fail("qualification contains missing or unreferenced evidence artifacts")
     identity, versions = _verify_source(root, expected)
     toolchain = _verify_toolchain(root, identity, versions)
+    required_runtime = FORMAL_PROFILE_RUNTIMES[profile_id]
+    if toolchain.get("runtime_profile_id") != required_runtime:
+        _fail(
+            f"{profile_id} requires exact formal runtime {required_runtime}",
+            ErrorCode.TOOLCHAIN_MISMATCH,
+        )
     _verify_tests(root, toolchain)
     directories = sorted((root / "validation").iterdir())
     if not directories or any(not directory.is_dir() or directory.is_symlink() for directory in directories):

@@ -7,8 +7,9 @@ model is pinned Qwen2.5-0.5B, with separate BF16/FP16 numerical profiles.
 The tiny weights are synthetic correctness fixtures, not a trained chatbot.
 
 A version is published only when its annotated remote tag and verified evidence
-bundle both exist. Version strings and release documents are prepared before
-the final gates; they alone are not publication proof. See the
+bundle both exist. The source SPEC is frozen before the final gates as an
+implemented but unqualified snapshot; the generated bundle manifest derives
+later qualification and release facts without rewriting that SPEC. See the
 [release evidence guide](docs/implementation/v0.1-status.md) and
 [learning index](docs/releases/README.md).
 

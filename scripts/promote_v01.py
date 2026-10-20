@@ -6,39 +6,25 @@ import argparse
 import json
 import os
 from pathlib import Path
-import re
 import sys
 from typing import Any, Sequence
 
 from illm.canonical import sha256_json
 from illm.domain.errors import ErrorCode, IllmError
 from illm.reference_qualification import _fs, _inventory, _object, _write, reference_source_identity
-from illm.reference_release import _state, verify_reference_release_bundle
+from illm.reference_release import _state, verify_frozen_v01_spec, verify_reference_release_bundle
 
 
 METADATA = {"manifest.json", "COMPLETE", "qualification/release-state.json", "SHA256SUMS.json"}
 SPEC = "docs/specs/versions/v0.1-reference-runner.md"
-RELEASED_AXES = {"status": "released", "spec_status": "released", "release_stage": "released",
-                 "qualification_tier": "functionally_qualified", "performance_outcome": "not_applicable",
-                 "lts_state": "not_applicable", "target_release": "v0.1.0"}
 
 
-def _released_spec(project: Path, candidate: Path) -> None:
-    actual = (project / SPEC).read_bytes()
+def _frozen_spec(project: Path, candidate: Path) -> None:
+    path = project / SPEC
+    actual = path.read_bytes()
     if actual != (candidate / "spec.md").read_bytes():
         raise IllmError(ErrorCode.TOOLCHAIN_MISMATCH, "candidate SPEC differs from the frozen checkout")
-    block = re.search(r"(?ms)^```yaml[ \t]*\r?\n(.*?)^```[ \t]*\r?$", actual.decode("utf-8"))
-    axes: dict[str, str] = {}
-    if block is not None:
-        for line in block[1].splitlines():
-            match = re.fullmatch(r"([a-z_]+):[ \t]*([^#]*?)[ \t]*(?:#.*)?", line)
-            if match is not None:
-                key, value = match.groups()
-                if key in axes:
-                    raise IllmError(ErrorCode.INVALID_ARGUMENT, "frozen SPEC has duplicate top-level metadata")
-                axes[key] = value.strip()
-    if any(axes.get(key) != value for key, value in RELEASED_AXES.items()):
-        raise IllmError(ErrorCode.INVALID_ARGUMENT, "promotion requires the already-qualified frozen SPEC to declare every released axis")
+    verify_frozen_v01_spec(path)
 
 
 def _replace_bytes(path: Path, content: bytes) -> None:
@@ -68,7 +54,7 @@ def promote_reference_candidate(candidate: Path) -> dict[str, Any]:
         raise IllmError(ErrorCode.INVALID_ARGUMENT, "promotion cannot follow release directory links")
     source = reference_source_identity(project)
     result = verify_reference_release_bundle(target / "manifest.json", expected_source_identity=source)
-    _released_spec(project, target)
+    _frozen_spec(project, target)
     if result["spec_status"] == "released" and result["release_stage"] == "released":
         return result
     if result["spec_status"] != "implemented" or result["release_stage"] != "release_candidate":
