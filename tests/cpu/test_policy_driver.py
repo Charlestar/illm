@@ -100,8 +100,10 @@ def _fake_cpu_process(project: Path, *, fault: str | None = None) -> Any:
                 )
             target.write_text(junit, encoding="utf-8")
             scratch = Path(command[command.index("--basetemp") + 1])
-            scratch.mkdir()
+            assert scratch.is_dir()
             (scratch / "synthetic-unit-scratch.txt").write_text("not evidence\n", encoding="ascii")
+            if fault == "scratch-linklike":
+                (scratch / "fault-link").write_text("synthetic link target\n", encoding="ascii")
         return subprocess.CompletedProcess(command, 0, stdout, b"")
 
     return process
@@ -203,8 +205,17 @@ def test_inputs_cpu_verify_are_ordered_portable_and_unqualified(
     assert cpu["raw_tensor_evidence"] == "not_captured"
     assert [record["phase"] for record in cpu["commands"]] == ["quality", "pytest", "example"]
     assert all(record["argv"][0] == "{finalized_python}" for record in cpu["commands"])
+    assert cpu["pytest_scratch"] == {
+        "path": "out/cpu-pytest-scratch",
+        "is_evidence": False,
+        "retention": "retained",
+    }
     assert str(project.resolve()) not in json.dumps(cpu, ensure_ascii=False)
+    scratch = project / "out/cpu-pytest-scratch"
+    assert (scratch / "synthetic-unit-scratch.txt").is_file()
     assert not (project / "out/cpu/pytest-temp").exists()
+    checksums = json.loads((project / "out/cpu/checksums.json").read_text(encoding="utf-8"))
+    assert all("pytest-scratch" not in entry["path"] for entry in checksums["files"])
 
     verified = json.loads((project / "out/verify/verification-report.json").read_text(encoding="utf-8"))
     assert [record["stage"] for record in verified["verified_stages"]] == ["inputs", "cpu"]
@@ -232,8 +243,78 @@ def test_cpu_failure_preserves_incomplete_and_does_not_advance_journal(
     assert (output / "INCOMPLETE").is_file()
     assert not (output / "COMPLETE").exists()
     assert (output / "logs/quality.stderr.txt").read_text(encoding="utf-8") == "synthetic failure\n"
+    assert (project / "out/failed-cpu-pytest-scratch").is_dir()
     journal = json.loads((project / "out/attempt.json").read_text(encoding="utf-8"))
     assert [record["stage"] for record in journal["stages"]] == ["inputs"]
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected_code"),
+    [("directory", "PATH_NOT_NEW"), ("file", "PATH_NOT_NEW"), ("linklike", "PATH_ESCAPE")],
+)
+def test_cpu_rejects_existing_or_linklike_scratch_without_deleting_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+    expected_code: str,
+) -> None:
+    project, _ = _project(tmp_path, monkeypatch)
+    assert driver.run_stage(_arguments(project, "inputs", "inputs")) == 0
+    scratch = project / "out/cpu-pytest-scratch"
+    if kind == "file":
+        scratch.write_bytes(b"foreign scratch file must remain")
+    else:
+        scratch.mkdir()
+        (scratch / "foreign-sentinel.txt").write_text("must remain\n", encoding="ascii")
+    if kind == "linklike":
+        original = driver._is_linklike
+
+        def synthetic_link(path: Path) -> bool:
+            if path.absolute() == scratch.absolute():
+                return True
+            return original(path)
+
+        monkeypatch.setattr(driver, "_is_linklike", synthetic_link)
+
+    def must_not_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        raise AssertionError(f"subprocess ran despite foreign scratch: {command!r}")
+
+    monkeypatch.setattr(subprocess, "run", must_not_run)
+    with pytest.raises(driver.DriverFailure) as raised:
+        driver.run_stage(_arguments(project, "cpu", "cpu"))
+    assert raised.value.code == expected_code
+    if kind == "file":
+        assert scratch.read_bytes() == b"foreign scratch file must remain"
+    else:
+        assert (scratch / "foreign-sentinel.txt").read_text(encoding="ascii") == "must remain\n"
+    assert (project / "out/cpu/INCOMPLETE").is_file()
+    assert not (project / "out/cpu/COMPLETE").exists()
+    journal = json.loads((project / "out/attempt.json").read_text(encoding="utf-8"))
+    assert [record["stage"] for record in journal["stages"]] == ["inputs"]
+
+
+def test_linklike_fault_inside_retained_scratch_does_not_enter_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project, _ = _project(tmp_path, monkeypatch)
+    assert driver.run_stage(_arguments(project, "inputs", "inputs")) == 0
+    scratch_fault = project / "out/cpu-pytest-scratch/fault-link"
+    original = driver._is_linklike
+
+    def synthetic_link(path: Path) -> bool:
+        if path.absolute() == scratch_fault.absolute():
+            return True
+        return original(path)
+
+    monkeypatch.setattr(driver, "_is_linklike", synthetic_link)
+    monkeypatch.setattr(subprocess, "run", _fake_cpu_process(project, fault="scratch-linklike"))
+    assert driver.run_stage(_arguments(project, "cpu", "cpu")) == 0
+    assert scratch_fault.is_file()
+    assert driver._is_linklike(scratch_fault)
+    checksums = json.loads((project / "out/cpu/checksums.json").read_text(encoding="utf-8"))
+    assert all("pytest-scratch" not in entry["path"] for entry in checksums["files"])
+    assert driver.run_stage(_arguments(project, "verify", "verify")) == 0
+    assert scratch_fault.is_file()
 
 
 @pytest.mark.parametrize("fault", ["quality", "junit-no-testcase"])
@@ -291,7 +372,32 @@ def test_cpu_validator_rejects_report_not_linked_to_execution_and_artifacts(
     assert raised.value.code == "EVIDENCE_INVALID"
 
 
-@pytest.mark.parametrize("mutation", ["qualification_result", "toolchain"])
+@pytest.mark.parametrize("target", ["execution_argv", "report_path", "report_non_boolean"])
+def test_cpu_validator_rejects_scratch_path_tamper(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    project, context = _project(tmp_path, monkeypatch)
+    _run_inputs_cpu(project, monkeypatch)
+    root = project / "out/cpu"
+    if target == "execution_argv":
+        path = root / "execution.json"
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["commands"][1]["argv"][7] = "out/foreign-pytest-scratch"
+    else:
+        path = root / "cpu-report.json"
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if target == "report_path":
+            payload["pytest_scratch"]["path"] = "out/foreign-pytest-scratch"
+        else:
+            payload["pytest_scratch"]["is_evidence"] = 0
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    material = driver._load_input_material(project)
+    with pytest.raises(driver.DriverFailure) as raised:
+        driver._validate_cpu_stage(root, context, material)
+    assert raised.value.code == "EVIDENCE_INVALID"
+
+
+@pytest.mark.parametrize("mutation", ["qualification_result", "toolchain", "numeric_type"])
 def test_verify_rejects_resealed_inputs_report_semantic_drift(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
 ) -> None:
@@ -302,8 +408,10 @@ def test_verify_rejects_resealed_inputs_report_semantic_drift(
     report = json.loads(report_path.read_text(encoding="utf-8"))
     if mutation == "qualification_result":
         report["qualification_result"] = "pass"
-    else:
+    elif mutation == "toolchain":
         report["toolchain"]["environment_id"] = "forged-environment"
+    else:
+        report["input"]["case_counts"][0] = 20.0
     driver._atomic_json(report_path, report)
 
     (root / "checksums.json").unlink()

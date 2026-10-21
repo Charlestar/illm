@@ -18,7 +18,6 @@ import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 from typing import Any, BinaryIO, Mapping, NoReturn, Sequence, cast
@@ -727,6 +726,62 @@ def _portable_relative(path: Path, project_root: Path) -> str:
         raise DriverFailure("PATH_ESCAPE", "portable evidence path escapes workspace") from exc
 
 
+def _pytest_scratch_path(output: Path) -> Path:
+    """Derive the one non-evidence pytest scratch sibling for a CPU output."""
+
+    return output.with_name(f"{output.name}-pytest-scratch")
+
+
+def _pytest_scratch_relative(output: Path, project_root: Path) -> str:
+    output_relative = Path(_portable_relative(output, project_root))
+    return output_relative.with_name(f"{output_relative.name}-pytest-scratch").as_posix()
+
+
+def _pytest_scratch_report(output: Path, project_root: Path) -> dict[str, object]:
+    return {
+        "path": _pytest_scratch_relative(output, project_root),
+        "is_evidence": False,
+        "retention": "retained",
+    }
+
+
+def _create_pytest_scratch(output: Path, project_root: Path) -> Path:
+    """Exclusively create, but never clear, the fixed non-evidence scratch root."""
+
+    scratch = _under_out(
+        _pytest_scratch_path(output),
+        project_root,
+        label="derived-pytest-scratch",
+    )
+    if scratch.is_symlink() or _is_linklike(scratch):
+        raise DriverFailure("PATH_ESCAPE", "derived pytest scratch cannot be a link")
+    if scratch.exists():
+        raise DriverFailure(
+            "PATH_NOT_NEW",
+            "derived pytest scratch already exists and will not be removed or reused",
+        )
+    try:
+        scratch.mkdir()
+    except FileExistsError as exc:
+        if scratch.is_symlink() or _is_linklike(scratch):
+            raise DriverFailure("PATH_ESCAPE", "derived pytest scratch became a link") from exc
+        raise DriverFailure(
+            "PATH_NOT_NEW",
+            "derived pytest scratch appeared concurrently and will not be removed or reused",
+        ) from exc
+    except OSError as exc:
+        raise DriverFailure(
+            "EVIDENCE_WRITE_FAILED",
+            "could not exclusively create the derived pytest scratch directory",
+        ) from exc
+    if not scratch.is_dir() or scratch.is_symlink() or _is_linklike(scratch):
+        raise DriverFailure(
+            "PATH_ESCAPE",
+            "newly created pytest scratch is not an ordinary directory and was retained",
+        )
+    return scratch
+
+
 def _stage_record(stage: str, output: Path, inventory: Mapping[str, object], project_root: Path) -> dict[str, object]:
     return {
         "sequence": CPU_STAGES.index(stage) + 1,
@@ -828,6 +883,7 @@ def _execute_phase(
 
 
 def _run_cpu(output: Path, toolchain: ToolchainContext, material: InputMaterial) -> None:
+    pytest_scratch = _create_pytest_scratch(output, toolchain.project_root)
     logs = output / "logs"
     logs.mkdir()
     environment = os.environ.copy()
@@ -861,7 +917,7 @@ def _run_cpu(output: Path, toolchain: ToolchainContext, material: InputMaterial)
                 "-p",
                 "no:cacheprovider",
                 "--basetemp",
-                str(output / "pytest-temp"),
+                str(pytest_scratch),
                 "--junitxml",
                 str(output / "junit.xml"),
                 "--tb=short",
@@ -893,17 +949,6 @@ def _run_cpu(output: Path, toolchain: ToolchainContext, material: InputMaterial)
     required = (output / "quality.json", output / "junit.xml")
     if any(path.is_symlink() or not path.is_file() for path in required):
         raise DriverFailure("CPU_PHASE_FAILED", "CPU phase returned without required quality/JUnit evidence")
-    # Pytest's base directory is scratch space, not evidence.  It can contain
-    # intentional symlink/fault fixtures, so remove only this exact driver-owned
-    # subtree after the suite has passed; on failure it remains for diagnosis.
-    pytest_temp = output / "pytest-temp"
-    if pytest_temp.exists() or pytest_temp.is_symlink():
-        if pytest_temp.is_symlink() or _is_linklike(pytest_temp) or pytest_temp.resolve().parent != output.resolve():
-            raise DriverFailure("CPU_PHASE_FAILED", "pytest scratch root is not the expected ordinary subtree")
-        try:
-            shutil.rmtree(pytest_temp)
-        except OSError as exc:
-            raise DriverFailure("CPU_PHASE_FAILED", "could not remove driver-owned pytest scratch data") from exc
     report = {
         "schema_version": 1,
         "kind": "illm-policy-cpu-development-gate-v1",
@@ -920,6 +965,7 @@ def _run_cpu(output: Path, toolchain: ToolchainContext, material: InputMaterial)
         "candidate_policy_digests": dict(sorted(material.policy_digests.items())),
         "toolchain": toolchain.portable_identity(),
         "commands": records,
+        "pytest_scratch": _pytest_scratch_report(output, toolchain.project_root),
         "required_artifacts": {
             "quality": {"path": "quality.json", "sha256": _sha256_file(output / "quality.json")},
             "junit": {"path": "junit.xml", "sha256": _sha256_file(output / "junit.xml")},
@@ -939,7 +985,7 @@ def _validate_inputs_stage(
         if _sha256_file(root / "candidate-policies" / f"{dtype}.json") != expected:
             raise DriverFailure("EVIDENCE_INVALID", "candidate policy descriptor changed", dtype=dtype)
     report = _unique_json(_regular_file_bytes(root / "inputs-report.json", "inputs report"), "inputs report")
-    if report != _inputs_report(material, toolchain):
+    if _canonical_bytes(report) != _canonical_bytes(_inputs_report(material, toolchain)):
         raise DriverFailure(
             "EVIDENCE_INVALID",
             "inputs report identity, result axes, source material, or toolchain differs",
@@ -1057,6 +1103,7 @@ def _validate_junit(path: Path) -> dict[str, int]:
 
 def _expected_cpu_commands(root: Path, project_root: Path) -> list[tuple[str, list[str]]]:
     relative = _portable_relative(root, project_root)
+    scratch_relative = _pytest_scratch_relative(root, project_root)
     return [
         (
             "quality",
@@ -1066,7 +1113,7 @@ def _expected_cpu_commands(root: Path, project_root: Path) -> list[tuple[str, li
             "pytest",
             [
                 "{finalized_python}", "-m", "pytest", "tests", "-p", "no:cacheprovider",
-                "--basetemp", f"{relative}/pytest-temp", "--junitxml", f"{relative}/junit.xml", "--tb=short",
+                "--basetemp", scratch_relative, "--junitxml", f"{relative}/junit.xml", "--tb=short",
             ],
         ),
         ("example", ["{finalized_python}", "docs/examples/v0_2_policy_cpu.py"]),
@@ -1111,9 +1158,55 @@ def _validate_execution(root: Path, project_root: Path) -> list[dict[str, object
     return commands
 
 
+def _validate_cpu_evidence_layout(root: Path) -> None:
+    core = {"logs", "quality.json", "junit.xml", "execution.json", "cpu-report.json"}
+    markers = {"INCOMPLETE", "COMPLETE", "checksums.json"}
+    try:
+        children = list(root.iterdir())
+    except OSError as exc:
+        raise DriverFailure("EVIDENCE_INVALID", "CPU evidence root is unreadable") from exc
+    names = {child.name for child in children}
+    if not core.issubset(names) or names - core - markers:
+        raise DriverFailure(
+            "EVIDENCE_INVALID",
+            "CPU evidence root contains missing or unexpected entries",
+            entries=sorted(names),
+        )
+    for child in children:
+        if child.is_symlink() or _is_linklike(child):
+            raise DriverFailure("EVIDENCE_INVALID", "CPU evidence root contains a link", path=child.name)
+        if child.name == "logs":
+            if not child.is_dir():
+                raise DriverFailure("EVIDENCE_INVALID", "CPU logs entry is not an ordinary directory")
+        elif not child.is_file():
+            raise DriverFailure("EVIDENCE_INVALID", "CPU evidence entry is not an ordinary file", path=child.name)
+
+    logs = root / "logs"
+    expected_logs = {
+        f"{phase}.{stream}.txt"
+        for phase in ("quality", "pytest", "example")
+        for stream in ("stdout", "stderr")
+    }
+    try:
+        log_children = list(logs.iterdir())
+    except OSError as exc:
+        raise DriverFailure("EVIDENCE_INVALID", "CPU logs directory is unreadable") from exc
+    log_names = {child.name for child in log_children}
+    if log_names != expected_logs:
+        raise DriverFailure(
+            "EVIDENCE_INVALID",
+            "CPU logs directory contains missing or unexpected entries",
+            entries=sorted(log_names),
+        )
+    for child in log_children:
+        if child.is_symlink() or _is_linklike(child) or not child.is_file():
+            raise DriverFailure("EVIDENCE_INVALID", "CPU log is not an ordinary file", path=child.name)
+
+
 def _validate_cpu_stage(root: Path, toolchain: ToolchainContext, material: InputMaterial) -> None:
+    _validate_cpu_evidence_layout(root)
     for path in (root / "quality.json", root / "junit.xml", root / "execution.json", root / "cpu-report.json"):
-        if path.is_symlink() or not path.is_file():
+        if path.is_symlink() or _is_linklike(path) or not path.is_file():
             raise DriverFailure("EVIDENCE_INVALID", "CPU stage is missing required evidence", path=path.name)
     quality = _validate_quality(root / "quality.json")
     _validate_junit(root / "junit.xml")
@@ -1126,7 +1219,7 @@ def _validate_cpu_stage(root: Path, toolchain: ToolchainContext, material: Input
         "schema_version", "kind", "status", "evidence_mode", "qualification_tier", "qualification_result",
         "performance_outcome", "gpu_result", "raw_tensor_evidence", "approved_commit", "protocol",
         "input_manifest_digest", "candidate_policy_digests", "toolchain", "commands", "required_artifacts",
-        "limitations",
+        "pytest_scratch", "limitations",
     }
     required = {
         "quality": {"path": "quality.json", "sha256": _sha256_file(root / "quality.json")},
@@ -1150,6 +1243,7 @@ def _validate_cpu_stage(root: Path, toolchain: ToolchainContext, material: Input
         or report.get("candidate_policy_digests") != dict(sorted(material.policy_digests.items()))
         or report.get("toolchain") != toolchain.portable_identity()
         or report.get("commands") != commands
+        or _canonical_bytes(report.get("pytest_scratch")) != _canonical_bytes(_pytest_scratch_report(root, toolchain.project_root))
         or report.get("required_artifacts") != required
         or report.get("limitations") != list(PENDING_WORK)
     ):
