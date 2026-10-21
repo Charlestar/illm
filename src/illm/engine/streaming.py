@@ -27,6 +27,7 @@ from illm.capture.streaming import StreamingCaptureSession
 from illm.domain.errors import EmergencyAbandon, ErrorCode, IllmError
 from illm.domain.events import DomainEvent, EventKind
 from illm.domain.streaming_events import StreamingEvent, StreamingEventKind as K
+from illm.domain.policy_events import PolicyStreamingEvent
 from illm.engine.facade import as_illm_error
 from illm.engine.streaming_contracts import (
     CancelResult, GenerationRequest, GenerationResult, MetadataChunk, StreamChunk,
@@ -34,9 +35,11 @@ from illm.engine.streaming_contracts import (
 )
 from illm.executor import EagerExecutor, ExecutionTicket
 from illm.memory import MemoryPlan, build_memory_plan
+from illm.memory.policy import PolicyMemoryPlan, build_policy_memory_plan
 from illm.metrics import RequestObservation, build_streaming_metrics
 from illm.model.loader import LoadedModel, load_model
 from illm.model.spec import ModelError
+from illm.numerical_policy import NumericalExecutionPolicyV1, NumericalPolicyError
 from illm.observability.bus import EventBus, EventSink
 from illm.sampling import SamplingState, commit_sample, prepare_sample
 from illm.tokenizer.streaming import DetokenizerFactory, IncrementalDetokenizer
@@ -94,7 +97,8 @@ class Engine:
     def __init__(self, model: str | Path = "fixture:tiny-decoder", *, device: str = "cpu",
                  kv_mode: str = "contiguous", max_context_tokens: int | None = None,
                  memory_budget_bytes: int = 6 * 1024 ** 3, project_root: Path | None = None,
-                 exporters: Sequence[EventSink] = (), exporter_capacity: int = 256) -> None:
+                 exporters: Sequence[EventSink] = (), exporter_capacity: int = 256,
+                 numerical_policy: NumericalExecutionPolicyV1 | None = None) -> None:
         if kv_mode not in {"none", "contiguous"}:
             raise IllmError(ErrorCode.UNSUPPORTED, "kv_mode must be none or contiguous")
         if not isinstance(model, (str, Path)) or not str(model):
@@ -107,14 +111,30 @@ class Engine:
             raise IllmError(ErrorCode.INVALID_ARGUMENT, "memory_budget_bytes must be a positive integer")
         if max_context_tokens is not None and (type(max_context_tokens) is not int or max_context_tokens < 1):
             raise IllmError(ErrorCode.INVALID_ARGUMENT, "max_context_tokens must be a positive integer or None")
+        if numerical_policy is not None:
+            if not isinstance(numerical_policy, NumericalExecutionPolicyV1):
+                raise IllmError(ErrorCode.INVALID_ARGUMENT, "numerical_policy must be a registered policy object")
+            if device != "cpu":
+                raise IllmError(ErrorCode.UNSUPPORTED, "policy CPU implementation rejects CUDA before model loading")
+            try:
+                numerical_policy.validate_kv_mode(kv_mode)
+            except NumericalPolicyError as exc:
+                raise IllmError(ErrorCode.UNSUPPORTED, str(exc)) from exc
+        self._numerical_policy = numerical_policy
         try:
             self._loaded: LoadedModel = load_model(model, device=device, project_root=project_root)
             capacity = self._loaded.max_context_tokens if max_context_tokens is None else max_context_tokens
             if type(capacity) is not int or not 1 <= capacity <= self._loaded.max_context_tokens:
                 raise IllmError(ErrorCode.INVALID_ARGUMENT, "max_context_tokens exceeds the selected profile")
             self._device = str(self._loaded.reference.canonical_weight("model.embed_tokens.weight").device)
-            self._memory_plan: MemoryPlan = build_memory_plan(self._loaded, kv_mode, capacity, memory_budget_bytes)
+            self._memory_plan: MemoryPlan | PolicyMemoryPlan = (
+                build_policy_memory_plan(self._loaded, numerical_policy, kv_mode, capacity, memory_budget_bytes,
+                                         project_root=(project_root or Path.cwd()).resolve())
+                if numerical_policy is not None else build_memory_plan(self._loaded, kv_mode, capacity, memory_budget_bytes)
+            )
             self.memory_plan.require_admission(1)
+            self._execution_binding = (self._memory_plan.execution_binding
+                                       if isinstance(self._memory_plan, PolicyMemoryPlan) else None)
             self._detokenizers = DetokenizerFactory(self._loaded.tokenizer, self._loaded.assets_directory / "tokenizer.json")
         except EmergencyAbandon:
             raise
@@ -185,8 +205,12 @@ class Engine:
         return self._capacity
 
     @property
-    def memory_plan(self) -> MemoryPlan:
+    def memory_plan(self) -> MemoryPlan | PolicyMemoryPlan:
         return self._memory_plan
+
+    @property
+    def numerical_policy(self) -> NumericalExecutionPolicyV1 | None:
+        return self._numerical_policy
 
     @property
     def last_events(self) -> tuple[StreamingEvent, ...]:
@@ -258,6 +282,10 @@ class Engine:
                 self._seen_ids.add(request.request_id)
             if request.model_spec_id != self.model_spec_id:
                 raise IllmError(ErrorCode.UNSUPPORTED, "request model_spec_id differs from loaded model")
+            if self.numerical_policy is not None and request.capture is not None:
+                # Never emit a schema2 capture with hidden new-policy semantics.
+                # The separately versioned schema3 writer is a subsequent slice.
+                raise IllmError(ErrorCode.UNSUPPORTED, "policy-aware schema3 capture writer is not implemented yet")
             started = perf_counter_ns()
             if request.prompt is not None:
                 input_ids = self._loaded.tokenizer.encode(request.prompt, add_bos=request.add_bos)
@@ -272,7 +300,8 @@ class Engine:
                 raise IllmError(ErrorCode.CONTEXT_LIMIT_EXCEEDED, "prompt plus requested output exceeds fixed context",
                                 {"capacity_tokens": self.capacity, "requested_tokens": len(input_ids) + request.max_new_tokens})
             self.memory_plan.require_admission(len(input_ids) + request.max_new_tokens)
-            executor = EagerExecutor(self._loaded, self.kv_mode, self.capacity)
+            executor = (EagerExecutor(self._loaded, self.kv_mode, self.capacity, numerical_policy=self.numerical_policy)
+                        if self.numerical_policy is not None else EagerExecutor(self._loaded, self.kv_mode, self.capacity))
             session = None
             if request.capture is not None:
                 try:
@@ -337,7 +366,8 @@ class Engine:
                         raise IllmError(ErrorCode.CAPTURE_INCOMPLETE,
                                         "required capture failed before acceptance was committed")
             if event is None:
-                event = StreamingEvent("stateful-engine", len(runtime.events), perf_counter_ns(), kind, payload)
+                event_type = PolicyStreamingEvent if self.numerical_policy is not None else StreamingEvent
+                event = event_type("stateful-engine", len(runtime.events), perf_counter_ns(), kind, payload)
             runtime.events.append(event)
             if runtime.request.telemetry in {"request", "ops"}:
                 self._bus.emit(DomainEvent("stateful-export-copy", event.producer_seq_no, event.monotonic_ns,
@@ -577,7 +607,8 @@ class Engine:
                  "server_e2e_wall_time_ns": terminal_ready_ns - runtime.accepted_ns,
                  "critical_capture_event_drop_count": runtime.capture_critical_drop_count,
                  "telemetry": runtime.request.telemetry, "evidence_kind": "measured"},
-                manifest_digest, runtime.capture_error, len(runtime.events),
+                manifest_digest, runtime.capture_error, len(runtime.events), self.numerical_policy,
+                self._execution_binding, self.memory_plan.digest if self.numerical_policy is not None else None,
             )
             runtime.result = result
             self._last_result = result
@@ -597,7 +628,8 @@ class Engine:
         runtime = self._begin(request)
         try:
             yield MetadataChunk(request.request_id, self.model_spec_id, request.sampling.digest,
-                                self.memory_plan.digest, len(runtime.input_ids), self.kv_mode, runtime.accepted_ns)
+                                self.memory_plan.digest, len(runtime.input_ids), self.kv_mode, runtime.accepted_ns,
+                                self.numerical_policy, self._execution_binding)
             while runtime.outcome is None:
                 try:
                     chunk = self._step(runtime)

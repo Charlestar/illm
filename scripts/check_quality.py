@@ -15,6 +15,7 @@ MYPY_TARGETS = (
     "scripts",
     "tests",
     "docs/examples/v0_2_streaming.py",
+    "docs/examples/v0_2_policy_cpu.py",
 )
 
 

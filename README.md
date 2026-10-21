@@ -41,7 +41,8 @@ python scripts/in_env.py --manifest out/v0.0/toolchain.json --expected-manifest-
 
 The normative requirements are in
 [`docs/specs/versions/v0.0-bootstrap-lab.md`](docs/specs/versions/v0.0-bootstrap-lab.md).
-Later version documents are plans, not implemented capabilities.
+SPEC text alone does not establish implementation or qualification; use each
+version's actual tag, verified bundle and development status.
 
 ## V0.1 quickstart
 
@@ -73,7 +74,8 @@ generated SVG diagrams, not screenshots of a nonexistent Web UI.
 
 ## V0.2 development quickstart
 
-This is an unqualified development path, not a published V0.2 release. Use the
+This is the retained unrecorded C0/schema2 diagnostic path, not the explicit
+numerical-policy candidate or a published V0.2 release. Use the
 same platform CPython versions as above, but bootstrap a **new source-bound
 environment** for this checkout. The `v01-cpu` name identifies the reused pinned
 dependency artifacts, not the version or qualification of the project code.
@@ -94,6 +96,14 @@ See the [V0.2 teach-back](docs/teach-back-v0.2.md),
 [runnable Python example](docs/examples/v0_2_streaming.py),
 [development status](docs/implementation/v0.2-status.md), and
 [known limitations](docs/known-limitations-v0.2.md).
+
+An opt-in [numerical-policy CPU example](docs/examples/v0_2_policy_cpu.py)
+separates candidate full-recompute B from true-KV C with the same explicit policy
+digest. Run it through the freshly bootstrapped source-bound wrapper. It does
+not replace V0.1 or the old development defaults; new-policy capture and CUDA
+are rejected while their qualification/migration work remains pending.
+See the [CPU checkpoint runbook](docs/implementation/v0.2-policy-cpu-checkpoint.md)
+for the ordered, source-bound development checks and the remaining release gates.
 
 ## Qualification boundaries
 

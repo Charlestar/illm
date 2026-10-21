@@ -3,7 +3,8 @@
 > 当前状态：`0.2.0.dev0` 开发快照，**unqualified**。本文是学习材料，
 > 不是 release evidence，也不表示 CPU、GPU、clean-room 或正式 tag 已通过。
 > 冻结边界以 [V0.2 SPEC](specs/versions/v0.2-stateful-streaming.md) 和
-> [ADR-006](adr/ADR-006-stateful-streaming.md) 为准。
+> [ADR-006](adr/ADR-006-stateful-streaming.md) 及已获批的
+> [ADR-007](adr/ADR-007-numerical-execution-policies.md) 为准；当前授权仅规范与CPU，GPU暂缓。
 
 V0.1 回答“给定完整上下文，下一个 token 是什么”。V0.2 把这条数学 oracle
 装进一个最小引擎：请求有生命周期，模型有增量状态，结果能逐 token 交付，取消
@@ -40,8 +41,9 @@ proposal 必须被丢弃，output index 和 RNG accounting 都不能前进。
 
 tiny fixture 对 `hello` 默认加 BOS，所以 prompt 长度是 6。固定生成 4 个输出时，
 contiguous KV 路径的实际 query token 数是 `[6, 1, 1, 1]`：第一次 prefill 处理
-完整 prompt，之后每次 decode 只处理上一个已提交输出。无 KV oracle 则重算
-`[6, 7, 8, 9]`。两条路径必须生成相同 token。
+完整 prompt，之后每次 decode 只处理上一个已提交输出。全量重算则处理
+`[6, 7, 8, 9]`。同一显式 candidate policy 的 B/C 完整 token 必须一致；
+不能把这个 tiny 例子推广为历史 C0 的真实低精度兼容已通过。
 
 | step | 本步 query | fence 后有效 KV | 本步发布后 committed outputs |
 |---:|---:|---:|---:|
@@ -55,9 +57,11 @@ contiguous KV 路径的实际 query token 数是 `[6, 1, 1, 1]`：第一次 pref
 `length`。这个“一 token lag”也是以后做 resume、preemption 和 speculative
 decoding 时必须显式保存的状态。
 
-`kv_cache.mode=none` 不是性能实现，而是 correctness oracle；
-`kv_cache.mode=contiguous` 才是本版最小增量路径。V0.2 没有 paged KV、block
-table、prefix cache 或 eviction。
+KV mode 只描述是否缓存，不能独自确定数值身份：`legacy+none=A` 保留旧reference；
+显式 candidate 下 `none=B` 是 full-recompute 对照、`contiguous=C` 是增量路径。
+B 与 C 共享算术实现，因此 B 不是独立 oracle，仍需普通 Transformers、独立
+FP64 和原 golden。未显式policy的旧 C0/schema2 仅保留作开发诊断。
+V0.2 没有 paged KV、block table、prefix cache 或 eviction。
 
 “每步 query 只剩 1 个 token”不等于每步成本是常数：attention 仍然要读取
 历史 K/V，序列越长，读取和注意力计算仍会增长。当前 eager 路径还会拼接/展开
@@ -125,6 +129,8 @@ tiny profile 的最大 context 保持 256。新的 V0.2 real-model profile 是 5
 ## 6. Capture 能回答什么
 
 schema2 capture 使用独立 catalog `illm-stateful-v02-v1`，能力严格为 `[R0]`。
+这属于未显式policy的历史 C0 路径；新policy的capture3 writer 尚未实现，不能
+把 schema2 capture 冒充新数值策略证据。
 默认 metadata-only：保存 phase、index、长度、fence/lease、时间关系和可选本地 HMAC，
 不保存 prompt、原始文本、token IDs、logits 或 HMAC key。live CLI 输出 token/result
 不代表落盘 capture 也保存这些内容。
@@ -157,6 +163,7 @@ latency；`DEADLINE_EXCEEDED` 只是保留 enum，本版计数必须为 0。
 不要复制或复用另一份 checkout 生成的 source-bound environment。先为**当前源码**
 重新 bootstrap；Windows 正式 profile 使用 CPython 3.12.14，Linux 使用 3.12.3。
 下面是开发学习命令，不授予 qualification：
+它们未选择显式policy，运行保留的 C0/schema2 诊断路径；新候选见 §8.1。
 
 ```sh
 python scripts/fetch_runtime.py --runtime-profile v01-cpu --artifact-cache .illm/cache/runtime
@@ -177,6 +184,34 @@ python scripts/in_env.py --manifest out/study-v02/toolchain.json --expected-mani
 tiny fixture 是确定性合成模型，只用于学习和 correctness；重复字符或非聊天式
 输出不代表语言能力。该示例属于现有静态类型检查范围，但不授予 GPU 或发布资格。
 
+### 8.1 显式数值策略的 CPU 学习切片
+
+新的[policy CPU 示例](examples/v0_2_policy_cpu.py)在同一个已绑定当前源码的
+环境中运行：
+
+```sh
+python scripts/in_env.py --manifest out/study-v02/toolchain.json --expected-manifest-digest-file out/study-v02/toolchain.sha256 -- python docs/examples/v0_2_policy_cpu.py
+```
+
+源码改变后必须重新bootstrap，不能复用上个commit的manifest。示例显式传入
+`candidate_policy("fp32")`，分别执行B全量重算与C真KV，打印相同policy digest
+以及不同query长度。这里`none`只说明KV模式，不再足以识别数值执行方式。
+FP32 contraction、RMSNorm、RoPE和softmax的cast边界见
+[冻结协议](implementation/v0.2-numerical-policy-protocol.md)。
+
+A仍是未修改的V0.1 reference，B不是自封oracle，C也不能只与共享实现的B
+比较就宣布正确。CPU检查另用普通Transformers与独立FP64公式，并保留原golden。
+FP64只验证tiny数学语义，不能代替真实BF16/FP16执行。schema3结果包含policy，
+旧schema2结果不追认身份；schema3不是R3 replay。
+
+此切片不支持新policy capture，传入capture会在acceptance前明确拒绝；不写
+隐藏新语义的schema2。GPU也明确拒绝。本例可学习数值身份与KV工作量，但不是
+交互式可视化、性能领先证明或已发布V0.2。
+
+想核验完整CPU开发检查，可按[checkpoint runbook](implementation/v0.2-policy-cpu-checkpoint.md)
+在新环境依次运行`inputs`、`cpu`、`verify`。检查stdout/stderr、JUnit和checksum，
+不要仅凭目录或一个`pass`字段判断通过。该开发报告仍不是协议要求的完整raw tensor证据。
+
 ## 9. 自检问题
 
 1. 为什么 `output_count=4` 时 contiguous KV 可能只有 `prompt+3` 个 valid tokens？
@@ -185,4 +220,6 @@ tiny fixture 是确定性合成模型，只用于学习和 correctness；重复�
 4. 为什么 `final_text_delta` 可以非空，却不能增加 output index？
 5. 为什么无 client timestamp 时不能用 server terminal 时间补一个 client E2E？
 6. 为什么 Request Story 能画时间线，却不能声称支持 R1 state replay？
+7. 为什么 B/C 输出相同，仍需要普通 Transformers、独立 FP64 和旧 golden？
+8. 为什么相同 KV 模式不等于相同数值策略，schema3 也不等于 R3？
 

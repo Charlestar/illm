@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "approval_kind": "illm-human-policy-approval-v1",
+  "approved_commit": "04144ab9ddb8d86c482ad6db8a618bded1f1e7aa",
+  "approval_date": "2026-10-21",
+  "protocol_id": "v02-numerical-policy-protocol-draft-1",
+  "protocol_sha256": "c9fd588a72e0e5b039c43585ef949346db5c98f71aa198172ebd4aaa96e719d5",
+  "spec_draft_sha256": "73a05a4f0e5e338d40ff406279695ef9a9596e2c55471bb8ffc8043493350334",
+  "adr_draft_sha256": "33133ac0a5d888e3175be9e2de1cdd1f2aa180e71d93d6591641af9023004c77",
+  "input_bytes_sha256": "93d0de1c5c606a58830eeef2d6b95f4a2b389b4defd17735507d2e95b9adb754",
+  "authorized_stages": ["inputs", "cpu", "verify"],
+  "gpu_authorized": false,
+  "gpu_budget_status": "unreconciled",
+  "human_answer": "批准规范与 CPU 实现，GPU 暂缓（推荐）"
+}

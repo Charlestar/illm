@@ -14,6 +14,8 @@ from illm.kv_cache import ContiguousKVStore, KVLayoutSpec, KVWriteLease
 from illm.model.incremental import IncrementalDecoder
 from illm.model.loader import LoadedModel
 from illm.model.spec import ModelError
+from illm.numerical_policy import NumericalExecutionPolicyV1
+from illm.model.policy import PolicyDecoder
 
 
 TicketState = Literal["launched", "resolved", "committed", "aborted"]
@@ -63,11 +65,14 @@ class EagerExecutor:
 
     ``launch`` always accepts the full committed input sequence.  In
     contiguous mode it derives either the whole prompt (prefill) or the one
-    uncached suffix token (decode).  In ``none`` mode it deliberately calls the
-    unchanged V0.1 full-context reference path.
+    uncached suffix token (decode). Without an explicit numerical policy,
+    ``none`` deliberately calls the unchanged V0.1 full-context reference.
+    An explicit candidate selects separate policy B/C arithmetic; it never
+    replaces that historical reference or silently changes the default.
     """
 
-    def __init__(self, loaded: LoadedModel, kv_mode: str, capacity: int) -> None:
+    def __init__(self, loaded: LoadedModel, kv_mode: str, capacity: int, *,
+                 numerical_policy: NumericalExecutionPolicyV1 | None = None) -> None:
         if kv_mode not in {"none", "contiguous"}:
             raise ModelError("INVALID_ARGUMENT", "kv_mode must be none or contiguous", field="kv_mode")
         if type(capacity) is not int or not 1 <= capacity <= min(
@@ -86,6 +91,16 @@ class EagerExecutor:
         self._unhealthy = False
         self._store: ContiguousKVStore | None = None
         self._incremental: IncrementalDecoder | None = None
+        self._policy_decoder: PolicyDecoder | None = None
+        self.numerical_policy = numerical_policy
+        if numerical_policy is not None:
+            numerical_policy.validate_kv_mode(kv_mode)
+            if numerical_policy.storage_dtype != loaded.spec.runtime_dtype:
+                raise ModelError("INVALID_ARGUMENT", "policy dtype differs from loaded model")
+            if self._device.type != "cpu":
+                raise ModelError("UNSUPPORTED_MODEL", "policy implementation is currently CPU-only; GPU is deferred")
+            if numerical_policy.is_candidate:
+                self._policy_decoder = PolicyDecoder(loaded.reference, numerical_policy)
         if kv_mode == "contiguous":
             layout = KVLayoutSpec.for_model(loaded.spec, device=str(self._device), capacity=capacity)
             self._store = ContiguousKVStore(layout)
@@ -182,7 +197,8 @@ class EagerExecutor:
                 query_ids = context_ids
                 execution_started = True
                 inputs = torch.tensor([query_ids], dtype=torch.int64, device=self._device)
-                logits = self.loaded.reference.forward(inputs)
+                logits = (self._policy_decoder.forward(inputs) if self._policy_decoder is not None
+                          else self.loaded.reference.forward(inputs))
             else:
                 store = self._store
                 incremental = self._incremental
@@ -202,7 +218,8 @@ class EagerExecutor:
                 after = lease.end
                 execution_started = True
                 inputs = torch.tensor([query_ids], dtype=torch.int64, device=self._device)
-                logits = incremental.forward(inputs, lease)
+                logits = (self._policy_decoder.forward_incremental(inputs, lease)
+                          if self._policy_decoder is not None else incremental.forward(inputs, lease))
             base_fence = record_completion_fence(self._device)
             fence = self._wrap_fence(base_fence)
             assert inputs is not None and logits is not None
@@ -335,4 +352,5 @@ class EagerExecutor:
         if self._store is not None:
             self._store.close()
         self._incremental = None
+        self._policy_decoder = None
         self._closed = True

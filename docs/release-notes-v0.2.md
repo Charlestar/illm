@@ -7,18 +7,28 @@
 
 ## What this version adds
 
+- Accepted numerical-policy SPEC v3/ADR-007 and an opt-in CPU development slice:
+  immutable policy/input identities, rowwise full-recompute B/true-KV C, ordinary
+  Transformers and independent FP64 tiny checks, and schema3 live results.
+  Policy-aware capture3 and full portable qualification/release/rollback remain
+  pending; new-policy capture and CUDA requests fail closed rather than claim
+  old-format or GPU support. Existing unrecorded development calls stay schema2.
+
 - A separate stateful `illm.engine.streaming.Engine` facade with single-request
   `generate()` and ordered `stream()` entry points.
 - Explicit metadata, token and terminal DTOs, including incremental text deltas,
   terminal `final_text_delta` and a complete schema2 result.
 - Synchronous prefill/decode execution with a contiguous KV cache and a
-  full-context `none` correctness oracle.
+  full-context control. Under an explicit candidate, `none=B` and
+  `contiguous=C`; B is not an independent oracle. `legacy+none=A` preserves
+  the old reference, while unrecorded C0 remains development diagnostics.
 - Immutable single-request `MemoryPlan`, capacity checks, execution tickets,
   completion fences, resource leases and fail-stop quarantine.
 - Idempotent cancellation, unique logical terminal arbitration and separation
   between terminal decision and terminal-ready cleanup.
 - schema2 metadata-only capture, typed stateful events, R0 Request Story, derived
-  Chrome trace, and fail-closed rejection of higher replay modes.
+  Chrome trace, and fail-closed rejection of higher replay modes, for the retained
+  unrecorded C0 path only; explicit policy capture3 remains pending.
 - Experimental `MetricRegistryV1` with five frozen, fully-qualified streaming
   metric definitions and deterministic report/conformance validation.
 - Local CLI commands `run`, `verify --fixture tiny-decoder` and `inspect request`.
@@ -40,13 +50,16 @@ capacity-256 profiles or the upstream model revision.
 - A normal stream emits one metadata chunk, committed token chunks with
   contiguous output indexes, and one terminal chunk after safe cleanup.
 - `contiguous` mode performs one full prefill then one-token decode steps;
-  `none` recomputes full context and must produce the same tokens.
+  `none` recomputes full context. B/C under the same explicit candidate must
+  pass complete-sequence gates and independent checks; KV mode alone is not a
+  numerical identity or proof that historical C0 GPU compatibility passed.
 - `FINISHED`, `CANCELLED` and `FAILED` are implemented accepted outcomes.
   `DEADLINE_EXCEEDED` is reserved and must remain absent in V0.2 reports.
 - The first CLI interrupt requests cancellation after acceptance and waits. A
   second interrupt uses emergency abandon and exits 130 without claiming safe
   release.
-- Captures default to metadata-only and R0. The live result may expose text and
+- Captures on the retained unrecorded C0 path default to metadata-only and R0.
+  Explicit-policy capture is rejected while capture3 is pending. The live result may expose text and
   token IDs, but the capture does not retain them by implication.
 
 ## Evidence status

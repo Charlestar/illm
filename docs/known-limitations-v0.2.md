@@ -6,6 +6,17 @@
 
 ## Execution and scale
 
+- The explicit numerical-policy CPU slice uses a separately versioned rowwise
+  FP32-contraction candidate, not a replacement for the frozen V0.1 reference.
+  It is opt-in; result/metadata schema3 and MemoryPlan2 do not imply a released
+  format. Policy-aware capture3, full numerical raw/portable qualification and
+  release/rollback migration are pending. Explicit-policy capture is rejected
+  before acceptance, and explicit-policy CUDA is rejected before model loading.
+  This development API requires the local source workspace to bind its current
+  implementation digest; it is not yet a portable standalone wheel interface.
+  The ordered CPU driver is a `DEVELOPMENT_ONLY` check, not the full retained
+  raw-tensor/portable qualification report.
+
 - The engine supports one accepted non-terminal request. A concurrent offer is
   rejected with `SINGLE_ACTIVE_LIMIT`; there is no queue, fairness policy,
   batching, admission scheduler or backpressure protocol.
@@ -19,8 +30,10 @@
 - Real CUDA contiguous correctness is currently **unresolved**, not merely
   unmeasured: BF16 and FP16 development smoke both exceeded the frozen logits
   tolerance. Finite logits or matching a selected token do not establish
-  equivalence. Use the published V0.1 checkpoint, or select `none` before a new
-  diagnostic request; never hot-switch an accepted request. See the
+  equivalence. Use the published V0.1 checkpoint, or explicitly select
+  `legacy+none=A` before a new diagnostic request. Candidate+none is B, not A;
+  changing only KV mode does not identify the arithmetic. Never hot-switch an
+  accepted request. See the
   [preserved numerical investigation](implementation/v0.2-numerical-investigation.md).
 - The built-in tiny decoder is deterministic synthetic test data. It is not a
   chat model and its text is not an indication of language quality.
@@ -42,7 +55,8 @@
 
 ## Observability and replay
 
-- schema2 capture is metadata-only and has capability exactly `[R0]`. It omits
+- schema2 capture on the retained unrecorded C0 path is metadata-only and has
+  capability exactly `[R0]`. Explicit-policy capture is still rejected. It omits
   raw prompt/text, token IDs, logits and activation values. Live CLI results may
   contain token IDs and text, but those values are not silently copied into the
   capture.

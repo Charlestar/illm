@@ -10,6 +10,8 @@ from typing import Any, TypeAlias
 
 from illm.domain.errors import ErrorCode, IllmError
 from illm.sampling import SamplingSpec
+from illm.numerical_policy import NumericalExecutionPolicyV1
+from illm.policy_binding import ExecutionBindingV1
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,14 +78,28 @@ class GenerationResult:
     capture_manifest_digest: str | None
     capture_error: str | None
     event_count: int
+    numerical_policy: NumericalExecutionPolicyV1 | None = None
+    execution_binding: ExecutionBindingV1 | None = None
+    memory_plan_digest: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """User-facing result may contain text/IDs; canonical capture never does."""
         value = asdict(self)
+        value.pop("numerical_policy")
+        value.pop("execution_binding")
+        value.pop("memory_plan_digest")
         for name in ("input_token_ids", "output_token_ids", "query_tokens_per_step", "kv_valid_tokens_per_step"):
             value[name] = list(value[name])
         value["committed_draw_addresses"] = [list(address) for address in self.committed_draw_addresses]
-        return {"schema_version": 2, **value}
+        if self.numerical_policy is None:
+            return {"schema_version": 2, **value}
+        if self.execution_binding is None or self.memory_plan_digest is None:
+            raise IllmError(ErrorCode.INVALID_ARGUMENT, "policy result requires source/environment/MemoryPlan binding")
+        return {"schema_version": 3, **value, "numerical_policy": self.numerical_policy.to_dict(),
+                "numerical_policy_digest": self.numerical_policy.digest,
+                "execution_binding": self.execution_binding.to_dict(),
+                "execution_binding_digest": self.execution_binding.digest,
+                "memory_plan_digest": self.memory_plan_digest}
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,10 +111,22 @@ class MetadataChunk:
     input_tokens: int
     kv_mode: str
     accepted_ns: int
+    numerical_policy: NumericalExecutionPolicyV1 | None = None
+    execution_binding: ExecutionBindingV1 | None = None
     kind: str = field(default="metadata", init=False)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        value = asdict(self)
+        value.pop("numerical_policy")
+        value.pop("execution_binding")
+        if self.numerical_policy is not None:
+            if self.execution_binding is None:
+                raise IllmError(ErrorCode.INVALID_ARGUMENT, "policy metadata requires execution binding")
+            value.update(schema_version=3, numerical_policy=self.numerical_policy.to_dict(),
+                         numerical_policy_digest=self.numerical_policy.digest,
+                         execution_binding=self.execution_binding.to_dict(),
+                         execution_binding_digest=self.execution_binding.digest)
+        return value
 
 
 @dataclass(frozen=True, slots=True)
