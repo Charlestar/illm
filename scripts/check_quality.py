@@ -10,6 +10,14 @@ from pathlib import Path
 from typing import Sequence
 
 
+MYPY_TARGETS = (
+    "src/illm",
+    "scripts",
+    "tests",
+    "docs/examples/v0_2_streaming.py",
+)
+
+
 def _annotation_issues(path: Path) -> list[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     issues: list[str] = []
@@ -54,9 +62,7 @@ def _run_mypy(project_root: Path) -> tuple[dict[str, object], list[str]]:
         sys.executable,
         "-m",
         "mypy",
-        "src/illm",
-        "scripts",
-        "tests",
+        *MYPY_TARGETS,
     ]
     process = subprocess.run(
         command,

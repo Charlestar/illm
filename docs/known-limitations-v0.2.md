@@ -86,9 +86,10 @@
 ## Qualification and portability
 
 - The final-source V0.2 CPU/GPU/clean-room set is not complete. An earlier
-  `44e7ddc` clean-room profile passed, and a `7d17bcd` isolated rollback rehearsal
-  passed, but their different source identities cannot be combined into a final
-  release. Development tests and tiny-model runs do not replace the GPU gate.
+  `44e7ddc` clean-room profile, `7d17bcd` isolated rollback rehearsal and
+  `9ca0507` Windows CPU preflight passed, but their different source identities
+  cannot be combined into a final release. The public-example changes are later
+  source again. Development tests and tiny-model runs do not replace the GPU gate.
 - Source-bound toolchain manifests cannot be moved between checkouts or retained
   after source changes. Re-bootstrap the current source; do not copy an old
   environment.

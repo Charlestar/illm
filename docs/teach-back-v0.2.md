@@ -164,10 +164,18 @@ python scripts/bootstrap.py --profile study-v02-current --runtime-profile v01-cp
 python scripts/in_env.py --manifest out/study-v02/toolchain.json --expected-manifest-digest-file out/study-v02/toolchain.sha256 -- python -m illm verify --fixture tiny-decoder
 python scripts/in_env.py --manifest out/study-v02/toolchain.json --expected-manifest-digest-file out/study-v02/toolchain.sha256 -- python -m illm run --model fixture:tiny-decoder --prompt hello --max-new-tokens 4 --seed 7 --stream --capture out/study-v02/capture/demo
 python scripts/in_env.py --manifest out/study-v02/toolchain.json --expected-manifest-digest-file out/study-v02/toolchain.sha256 -- python -m illm inspect request out/study-v02/capture/demo --request req-0001
+python scripts/in_env.py --manifest out/study-v02/toolchain.json --expected-manifest-digest-file out/study-v02/toolchain.sha256 -- python docs/examples/v0_2_streaming.py
 ```
 
-也可以运行 [Python API 示例](examples/v0_2_streaming.py)。tiny fixture 是确定性
-合成模型，只用于学习和 correctness；重复字符或非聊天式输出不代表语言能力。
+[Python API 示例](examples/v0_2_streaming.py) 先用独立 engine/request 调用
+`generate()`，以 `kv_mode="none"` 一次返回完整结果；再用另一组 engine/request
+调用 `stream()`，以 `contiguous` 逐 chunk 交付。示例比较完整 token 与文本结果，
+并核对两条路径的 query 长度分别为 `[6, 7, 8, 9]` 和 `[6, 1, 1, 1]`。
+这能直接观察“返回方式”和“是否复用 KV”是两件事：`generate()` 并不意味着
+必须关闭 KV，`stream()` 也不意味着一定有 KV。示例两条路径都显式安全关闭。
+
+tiny fixture 是确定性合成模型，只用于学习和 correctness；重复字符或非聊天式
+输出不代表语言能力。该示例属于现有静态类型检查范围，但不授予 GPU 或发布资格。
 
 ## 9. 自检问题
 
