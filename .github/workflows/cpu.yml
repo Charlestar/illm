@@ -68,6 +68,9 @@ jobs:
       - name: Independently verify the historical V0.1 bundle when present
         if: ${{ hashFiles('release/v0.1.0/manifest.json') != '' }}
         run: python scripts/in_env.py --manifest out/v0.1/toolchain.json --expected-manifest-digest-file out/v0.1/toolchain.sha256 -- python -m illm release verify release/v0.1.0/manifest.json
+      - name: Verify V0.2 bundle when present or required by its tag
+        if: ${{ github.ref == 'refs/tags/v0.2.0' || hashFiles('release/v0.2.0/manifest.json') != '' }}
+        run: python scripts/in_env.py --manifest out/v0.1/toolchain.json --expected-manifest-digest-file out/v0.1/toolchain.sha256 -- python scripts/check_v02_release_snapshot.py --manifest release/v0.2.0/manifest.json --ci
       - name: Toy capture
         run: python scripts/in_env.py --manifest out/v0.1/toolchain.json --expected-manifest-digest-file out/v0.1/toolchain.sha256 -- python -m illm demo toy-scheduler --seed 7 --steps 20 --capture out/v0.0
       - name: R0 playback
@@ -84,6 +87,18 @@ jobs:
         run: python scripts/in_env.py --manifest out/v0.1/toolchain.json --expected-manifest-digest-file out/v0.1/toolchain.sha256 -- python -m illm replay out/v0.1-tiny --mode state --assert-state-digest
       - name: Independent pinned Transformers oracle
         run: python scripts/in_env.py --manifest out/v0.1/toolchain.json --expected-manifest-digest-file out/v0.1/toolchain.sha256 -- python -m illm model validate --model fixture:tiny-decoder --against transformers --output-directory out/v0.1/oracle
+      - name: V0.2 source-bound tiny differential check (not release qualification)
+        run: python scripts/in_env.py --manifest out/v0.1/toolchain.json --expected-manifest-digest-file out/v0.1/toolchain.sha256 -- python scripts/validate_stateful.py --model fixture:tiny-decoder --device cpu --scope full --output out/v0.2/stateful-full
+      - name: V0.2 lifecycle and fault matrix (CPU injections, not GPU faults)
+        run: python scripts/in_env.py --manifest out/v0.1/toolchain.json --expected-manifest-digest-file out/v0.1/toolchain.sha256 -- python scripts/exercise_streaming.py --output out/v0.2/exercise
+      - name: V0.2 streaming demo
+        run: python scripts/in_env.py --manifest out/v0.1/toolchain.json --expected-manifest-digest-file out/v0.1/toolchain.sha256 -- python -m illm run --model fixture:tiny-decoder --prompt hello --max-new-tokens 8 --seed 7 --stream --capture out/v0.2/demo-capture
+      - name: V0.2 metadata-only request story
+        run: python scripts/in_env.py --manifest out/v0.1/toolchain.json --expected-manifest-digest-file out/v0.1/toolchain.sha256 -- python -m illm inspect request out/v0.2/demo-capture --request req-0001 --chrome-trace out/v0.2/chrome-trace.json
+      - name: Derive V0.2 learning views from recorded cancellation
+        run: python scripts/in_env.py --manifest out/v0.1/toolchain.json --expected-manifest-digest-file out/v0.1/toolchain.sha256 -- python scripts/render_streaming_learning.py out/v0.2/exercise/captures/cancel-after-launch --output out/v0.2/learning
+      - name: Independently regenerate V0.2 learning views
+        run: python scripts/in_env.py --manifest out/v0.1/toolchain.json --expected-manifest-digest-file out/v0.1/toolchain.sha256 -- python scripts/render_streaming_learning.py out/v0.2/exercise/captures/cancel-after-launch --output out/v0.2/learning --verify-existing
       - name: Upload development check artifacts (not a release qualification)
         if: always()
         uses: actions/upload-artifact@v4
@@ -93,4 +108,5 @@ jobs:
             out/v0.1
             out/v0.1-tiny
             out/v0.0
+            out/v0.2
           if-no-files-found: error

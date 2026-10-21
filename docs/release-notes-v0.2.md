@@ -53,10 +53,13 @@ capacity-256 profiles or the upstream model revision.
 
 Targeted CPU/tiny development checks have exercised the core paths, including a
 tiny contiguous run whose four query lengths were `[6, 1, 1, 1]`. These are
-development observations only. The full CPU state-machine profile, fixed real
-GPU BF16/FP16 profile, clean-room profile, 100-cycle stress evidence, telemetry
-benchmark, rollback, derived image and portable release bundle are still
-required. No full-suite, GPU-performance or production-speed claim is made.
+development observations only. An earlier source-frozen Linux clean-room gate
+and an isolated V0.2-to-V0.1 rollback rehearsal passed at different source
+snapshots; neither can be promoted into evidence for later source changes.
+The final source still needs matching CPU, real GPU BF16/FP16 and clean-room
+profiles, stress and benchmark evidence, rollback, derived images and a portable
+release bundle. The real BF16/FP16 development smoke remains failed. No final
+qualification, GPU-performance or production-speed claim is made.
 
 See [implementation status](implementation/v0.2-status.md),
 [known limitations](known-limitations-v0.2.md), and

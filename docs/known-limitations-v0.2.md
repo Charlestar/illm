@@ -85,12 +85,19 @@
 
 ## Qualification and portability
 
-- No formal V0.2 CPU, GPU or clean-room profile is complete yet. Development
-  tests and tiny-model runs do not substitute for those profiles.
+- The final-source V0.2 CPU/GPU/clean-room set is not complete. An earlier
+  `44e7ddc` clean-room profile passed, and a `7d17bcd` isolated rollback rehearsal
+  passed, but their different source identities cannot be combined into a final
+  release. Development tests and tiny-model runs do not replace the GPU gate.
 - Source-bound toolchain manifests cannot be moved between checkouts or retained
   after source changes. Re-bootstrap the current source; do not copy an old
   environment.
 - Windows and Linux locked profiles use different Python patch releases
   (3.12.14 and 3.12.3 respectively). A pass in one environment does not imply a
   pass in the other.
+- Promotion uses an exclusive lock outside the release bundle. A concurrent or
+  crash-left lock blocks promotion; the tool does not reclaim it automatically.
+  Inspect the interrupted transaction and verify its metadata before manually
+  resolving a stale lock. Unconfirmed metadata restoration or lock ownership is
+  a no-publish condition, not evidence of a completed release.
 

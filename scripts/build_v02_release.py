@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Sequence
 
 from illm.domain.errors import ErrorCode, IllmError
+from illm.stateful_qualification import stateful_source_identity
 from illm.stateful_release import build_stateful_release_bundle
 
 
@@ -21,7 +22,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         result = build_stateful_release_bundle(evidence_roots=args.evidence_root, rollback=args.rollback,
-                                               documentation_root=args.documentation_root, output=args.output)
+                                               documentation_root=args.documentation_root, output=args.output,
+                                               expected_source_identity=stateful_source_identity(Path(__file__).resolve().parents[1]))
         print(json.dumps(result, sort_keys=True))
         return 0
     except IllmError as exc:

@@ -12,7 +12,10 @@ as a release profile. The published v0.1.0 tag and bundle remain immutable.
    new environments and new output paths for every required profile.
 
 2. Fetch pinned artifacts explicitly; gate bootstrap itself is offline:
+   On Windows for the CPU profile:
    python scripts/fetch_runtime.py --runtime-profile v01-cpu --artifact-cache .illm/cache/runtime
+   In the independent Linux checkout for clean-room and GPU profiles:
+   python3 scripts/fetch_runtime.py --runtime-profile v01-cpu --artifact-cache .illm/cache/runtime
    python3 scripts/fetch_runtime.py --runtime-profile v01-cuda --artifact-cache .illm/cache/runtime
    Use CPython3.12.14 on Windows or CPython3.12.3 on Linux, as the lock requires.
    Large real-model assets must already be present and digest-verified locally.
@@ -44,15 +47,47 @@ as a release profile. The published v0.1.0 tag and bundle remain immutable.
    Their bytes must match the qualified source, including the frozen SPEC.
 
 7. In a finalized current environment, assemble a candidate with:
-   python scripts/build_v02_release.py --evidence-root PATH_TO_CPU_QUALIFICATION --evidence-root PATH_TO_GPU_QUALIFICATION --evidence-root PATH_TO_CLEAN_QUALIFICATION --rollback PATH_TO_COMPLETE_ROLLBACK --documentation-root PATH_TO_FIVE_DOCUMENTS --output out/v02-release-candidate
-   python -m illm release verify out/v02-release-candidate/manifest.json
+   The child argv below MUST be executed through scripts/in_env.py with the final
+   primary toolchain manifest and --expected-manifest-digest-file. No activation
+   or global PATH shortcut replaces that wrapper/source handshake.
+   python scripts/build_v02_release.py --evidence-root PATH_TO_CPU_QUALIFICATION --evidence-root PATH_TO_GPU_QUALIFICATION --evidence-root PATH_TO_CLEAN_QUALIFICATION --rollback PATH_TO_COMPLETE_ROLLBACK --documentation-root PATH_TO_FIVE_DOCUMENTS --output release/v0.2.0
+   python -m illm release verify release/v0.2.0/manifest.json --require-current-source
+   release/v0.2.0 MUST be a new ordinary directory. Do not copy over an existing
+   bundle. The builder binds its inputs to this checkout, not merely to any
+   three profiles that happen to match one another.
    The bundle reader revalidates every profile and derived view, not just hashes.
    The required-capture write failure is published as capture/incomplete-exporter;
    it remains explicitly incomplete and is not a successful optional-exporter run.
 
-8. Independently audit the copied bundle in a checkout-free, tensor-free process.
-   Confirm actual CI for the exact final commit. Review teaching diagrams and
-   limitations. Assembly alone never promotes a candidate, creates a GitHub
-   Release, or tags Git. Only after the entire release/promotion audit passes may
-   the authorized release workflow create and push an annotated v0.2.0 tag bound
-   to the final manifest digest. Never retag or rewrite a published checkpoint.
+8. Independently audit a portable copy in a checkout-free, tensor-free process.
+   Review teaching diagrams and limitations. Then, through the same finalized
+   current-source wrapper, promote only generated metadata and reverify:
+   python scripts/promote_v02.py --release-dir release/v0.2.0
+   python -m illm release verify release/v0.2.0/manifest.json --require-current-source
+   python scripts/check_v02_release_snapshot.py --manifest release/v0.2.0/manifest.json
+   Promotion does not edit the frozen source SPEC or claim a remote Git tag.
+   A failed transaction must restore and verify the original candidate. A failed
+   restoration is a no-publish condition, not permission to continue manually.
+   Promotion is exclusive across processes. An existing lock (including one
+   left by a crash) blocks the operation; never delete another running command's
+   lock or auto-clear a stale lock without auditing the interrupted transaction.
+
+9. Commit/push the generated bundle without changing qualified source bytes.
+   Wait for all CI jobs on that exact commit; an old green run is not sufficient.
+   CI checks released metadata and current source on final package0.2.0 and on
+   refs/tags/v0.2.0. Later-version main checks this old bundle historically, so a
+   future V0.3 change does not pretend to be the V0.2 qualified source.
+   Re-run the current-source and released-snapshot checks from step8, verify a
+   clean worktree, and confirm v0.2.0 is absent both locally and remotely before
+   creating anything. If the tag already exists, stop; never force or retag.
+   The final human/agent release audit must cover the whole SPEC, not only CI.
+   Only after that audit and exact-commit CI pass:
+   git tag -a v0.2.0 EXACT_CI_GREEN_COMMIT -m "iLLM v0.2.0; manifest_digest=VERIFIED_MANIFEST_DIGEST"
+   git cat-file -t v0.2.0
+   git cat-file -p v0.2.0
+   git push origin refs/tags/v0.2.0
+   git ls-remote --tags origin refs/tags/v0.2.0 'refs/tags/v0.2.0^{}'
+   The local type must be tag; its annotation must contain the verified digest.
+   Confirm the remote tag object equals the local object and its peeled commit
+   equals EXACT_CI_GREEN_COMMIT. Commands contain placeholders, not permission to
+   skip verification. No tool above automatically tags or creates a GitHub Release.

@@ -168,6 +168,35 @@ def test_current_source_cli_uses_common_dispatch_not_old_v01_only(tmp_path: Path
     assert seen == {"path": args.manifest, "expected_source_identity": identity}
 
 
+def test_builder_cli_requires_this_checkout_source_not_just_matching_other_profiles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib.util
+
+    root = Path(__file__).resolve().parents[2]
+    spec = importlib.util.spec_from_file_location("v02_builder_unit_not_evidence", root / "scripts/build_v02_release.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    identity = {name: "a" * 64 for name in SOURCE_FIELDS}
+    seen: dict[str, Any] = {}
+
+    def source(project: Path) -> dict[str, str]:
+        assert project == root
+        return identity
+
+    def build(**kwargs: Any) -> dict[str, Any]:
+        seen.update(kwargs)
+        return {"unit_only_not_evidence": True}
+
+    monkeypatch.setattr(module, "stateful_source_identity", source)
+    monkeypatch.setattr(module, "build_stateful_release_bundle", build)
+    assert module.main(["--evidence-root", str(tmp_path / "unit-profile"), "--rollback", str(tmp_path / "rollback"),
+                        "--documentation-root", str(tmp_path / "docs"), "--output", str(tmp_path / "out")]) == 0
+    assert seen["expected_source_identity"] == identity
+    assert not (tmp_path / "out").exists()
+
+
 def test_duplicate_json_header_is_not_resignable_evidence(tmp_path: Path) -> None:
     (tmp_path / "manifest.json").write_text('{"schema_version":2,"schema_version":2}', encoding="utf-8")
     with pytest.raises(IllmError):
