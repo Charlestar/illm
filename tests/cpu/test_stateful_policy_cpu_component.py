@@ -1,20 +1,29 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import os
 import subprocess
 import sys
 import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
+from contextlib import redirect_stdout
+from unittest.mock import patch
 
 import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts"))
+import check_quality
 
 from illm.numerical_policy import candidate_policy
 from illm.stateful_policy_cpu_component import (
     COMPONENT_KIND,
     PolicyCPUComponentError,
+    _verify_quality,
     verify_policy_cpu_development_component,
 )
 from illm.stateful_policy_gate_contract import (
@@ -92,11 +101,11 @@ def _read_json(path: Path) -> dict[str, Any]:
     return cast(dict[str, Any], value)
 
 
-def _toolchain() -> dict[str, Any]:
+def _toolchain(*, producer_os: str = "Windows") -> dict[str, Any]:
     value: dict[str, Any] = {
         "schema_version": 1,
         "profile": "policy-component-unit",
-        "runtime_profile_id": "py312-win-amd64-cpu",
+        "runtime_profile_id": "py312-win-amd64-cpu" if producer_os == "Windows" else "py312-linux-x86_64-cpu",
         "project_root": "C:/source/illm",
         "environment_root": "C:/source/illm/.illm/envs/policy-component-unit",
         "python_executable": "C:/source/illm/.illm/envs/policy-component-unit/Scripts/python.exe",
@@ -104,7 +113,7 @@ def _toolchain() -> dict[str, Any]:
         "finalized": True,
         "environment_id": str(uuid.UUID("11111111-1111-4111-8111-111111111111")),
         "python_version": "3.12.14",
-        "os": "Windows",
+        "os": producer_os,
         "arch": "AMD64",
         "lock_digest": "1" * 64,
         "runtime_lock_digest": "2" * 64,
@@ -277,9 +286,49 @@ def _seal(stage_root: Path, stage: str) -> dict[str, Any]:
     return value
 
 
+def _quality_from_real_producer(path: Path, *, producer_os: str) -> bytes:
+    """Exercise actual main/serializer; mock only checks and platform text I/O.
+
+    The file writer's native newline and print's TextIOWrapper are simulated
+    together so a copied Windows profile is tested on Linux and vice versa.
+    JSON is never serialized by the fixture's compact _write_json helper.
+    """
+    newline = "\r\n" if producer_os == "Windows" else "\n"
+    stdout = io.BytesIO()
+    sink = io.TextIOWrapper(stdout, encoding="utf-8", newline=newline)
+
+    def producer_write_text(
+        target: Path, data: str, encoding: str | None = None,
+        errors: str | None = None, newline: str | None = None,
+    ) -> int:
+        assert newline is None  # The unchanged producer selects native EOL.
+        with target.open("w", encoding=encoding, errors=errors,
+                         newline="\r\n" if producer_os == "Windows" else "\n") as stream:
+            return stream.write(data)
+
+    completed = subprocess.CompletedProcess(
+        args=[], returncode=0, stdout="Success: no issues found in 213 source files\n", stderr="",
+    )
+    with (
+        patch.object(check_quality, "check", return_value=[]),
+        patch("check_quality.subprocess.run", return_value=completed),
+        patch("check_quality.importlib.metadata.version", return_value="1.18.2"),
+        patch.object(Path, "write_text", new=producer_write_text),
+        redirect_stdout(sink),
+    ):
+        assert check_quality.main(["--output", str(path)]) == 0
+    sink.flush()
+    raw_stdout = stdout.getvalue()
+    sink.detach()
+    assert path.read_bytes() == raw_stdout
+    assert b'": ' in raw_stdout
+    return raw_stdout
+
+
 def _build_component(
     tmp_path: Path,
     *,
+    producer_os: str = "Windows",
     mutate_before_seal: Callable[[Path], None] | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     root = tmp_path / "component"
@@ -290,7 +339,7 @@ def _build_component(
     (cpu / "logs").mkdir(parents=True)
     verified.mkdir(parents=True)
 
-    toolchain = _toolchain()
+    toolchain = _toolchain(producer_os=producer_os)
     portable = _portable(toolchain)
     _write_json(root / "toolchain.json", toolchain)
     input_bytes = Path("docs/implementation/v0.2-policy-inputs-draft.json").read_bytes()
@@ -324,21 +373,8 @@ def _build_component(
         },
     )
 
-    quality = {
-        "schema_version": 0,
-        "checked_python_files": 17,
-        "issues": [],
-        "type_check": {
-            "tool": "mypy",
-            "version": "mypy 1.18.2",
-            "returncode": 0,
-            "status": "pass",
-            "output": ["Success: no issues found in 17 source files"],
-        },
-        "status": "pass",
-    }
-    _write_json(cpu / "quality.json", quality)
-    (cpu / "logs/quality.stdout.txt").write_bytes((cpu / "quality.json").read_bytes())
+    quality_stdout = _quality_from_real_producer(cpu / "quality.json", producer_os=producer_os)
+    (cpu / "logs/quality.stdout.txt").write_bytes(quality_stdout)
     (cpu / "logs/quality.stderr.txt").write_bytes(b"")
     (cpu / "logs/pytest.stdout.txt").write_bytes(b"1 passed in 0.01s\n")
     (cpu / "logs/pytest.stderr.txt").write_bytes(b"")
@@ -539,6 +575,136 @@ def test_fully_resigned_cpu_claim_cannot_promote_raw_tensor_evidence(tmp_path: P
 
     root, toolchain = _build_component(tmp_path, mutate_before_seal=mutate)
     with pytest.raises(PolicyCPUComponentError, match="result boundary"):
+        verify_policy_cpu_development_component(root, expected_toolchain=toolchain, gate_relative=GATE_RELATIVE)
+
+
+@pytest.mark.parametrize("producer_os", ["Windows", "Linux"])
+def test_real_quality_producer_wire_survives_full_portable_component(
+    tmp_path: Path, producer_os: str,
+) -> None:
+    root, toolchain = _build_component(tmp_path, producer_os=producer_os)
+    raw = (root / "policy-cpu/quality.json").read_bytes()
+    newline = b"\r\n" if producer_os == "Windows" else b"\n"
+    quality = json.loads(raw)
+    assert raw == json.dumps(quality, ensure_ascii=False, sort_keys=True).encode("utf-8") + newline
+    result = verify_policy_cpu_development_component(
+        root, expected_toolchain=toolchain, gate_relative=GATE_RELATIVE,
+    )
+    assert result["status"] == "pass" and result["qualification_status"] == "unqualified"
+
+
+def test_actual_quality_main_native_wire_matches_the_quality_specific_reader(tmp_path: Path) -> None:
+    """Do not mock file/print I/O in the native producer/reader regression."""
+    producer_os, runtime = {
+        "win32": ("Windows", "py312-win-amd64-cpu"),
+        "linux": ("Linux", "py312-linux-x86_64-cpu"),
+    }[sys.platform]
+    completed = subprocess.CompletedProcess(
+        args=[], returncode=0, stdout="Success: no issues found in 213 source files\n", stderr="",
+    )
+    output = tmp_path / "native-quality.json"
+    buffer = io.BytesIO()
+    stdout = io.TextIOWrapper(buffer, encoding="utf-8", newline=None)
+    with (
+        patch.object(check_quality, "check", return_value=[]),
+        patch("check_quality.subprocess.run", return_value=completed),
+        patch("check_quality.importlib.metadata.version", return_value="1.18.2"),
+        redirect_stdout(stdout),
+    ):
+        assert check_quality.main(["--output", str(output)]) == 0
+    stdout.flush()
+    raw_stdout = buffer.getvalue()
+    stdout.detach()
+    raw = output.read_bytes()
+    value = json.loads(raw)
+    assert raw == raw_stdout
+    assert raw == json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8") + os.linesep.encode("ascii")
+    assert _verify_quality(output, producer_os=producer_os, runtime_profile_id=runtime) == value
+
+
+def _replace_quality_before_full_reseal(root: Path, raw: bytes, *, stdout: bytes | None = None) -> None:
+    cpu = root / "policy-cpu"
+    (cpu / "quality.json").write_bytes(raw)
+    (cpu / "logs/quality.stdout.txt").write_bytes(raw if stdout is None else stdout)
+    execution = _read_json(cpu / "execution.json")
+    commands = cast(list[dict[str, Any]], execution["commands"])
+    commands[0]["stdout_sha256"] = _sha((cpu / "logs/quality.stdout.txt").read_bytes())
+    _write_json(cpu / "execution.json", execution)
+    report = _read_json(cpu / "cpu-report.json")
+    report["commands"] = commands
+    report["required_artifacts"]["quality"]["sha256"] = _sha(raw)
+    _write_json(cpu / "cpu-report.json", report)
+
+
+@pytest.mark.parametrize("producer_os", ["Windows", "Linux"])
+@pytest.mark.parametrize("mutation", [
+    "compact", "wrong-eol", "extra-space", "duplicate", "nan", "infinity", "minus-infinity",
+    "overflow", "minus-overflow",
+    "extra-final-newline", "no-final-newline", "schema-bool", "unknown-field",
+])
+def test_fully_resigned_quality_wire_or_strict_json_mutations_fail_closed(
+    tmp_path: Path, producer_os: str, mutation: str,
+) -> None:
+    def mutate(root: Path) -> None:
+        raw = (root / "policy-cpu/quality.json").read_bytes()
+        value = json.loads(raw)
+        newline = b"\r\n" if producer_os == "Windows" else b"\n"
+        if mutation == "compact":
+            bad = _canonical(value) + newline
+        elif mutation == "wrong-eol":
+            bad = raw[:-len(newline)] + (b"\n" if producer_os == "Windows" else b"\r\n")
+        elif mutation == "extra-space":
+            bad = raw.replace(b'": ', b'":  ', 1)
+        elif mutation == "duplicate":
+            bad = b'{"schema_version": 0, ' + raw[1:]
+        elif mutation == "extra-final-newline":
+            bad = raw + newline
+        elif mutation == "no-final-newline":
+            bad = raw[:-len(newline)]
+        elif mutation == "schema-bool":
+            value["schema_version"] = False
+            bad = json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8") + newline
+        elif mutation == "unknown-field":
+            value["invented"] = "quality-only-encoding-exception-is-not-a-schema-exception"
+            bad = json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8") + newline
+        else:
+            constant = {
+                "nan": b"NaN", "infinity": b"Infinity", "minus-infinity": b"-Infinity",
+                "overflow": b"1e999", "minus-overflow": b"-1e999",
+            }[mutation]
+            bad = raw.replace(b'"schema_version": 0', b'"schema_version": ' + constant)
+        assert bad != raw
+        _replace_quality_before_full_reseal(root, bad)
+
+    root, toolchain = _build_component(tmp_path, producer_os=producer_os, mutate_before_seal=mutate)
+    with pytest.raises(PolicyCPUComponentError, match="wire encoding|duplicate JSON|non-finite|quality report"):
+        verify_policy_cpu_development_component(root, expected_toolchain=toolchain, gate_relative=GATE_RELATIVE)
+
+
+@pytest.mark.parametrize("producer_os", ["Windows", "Linux"])
+def test_fully_resigned_quality_stdout_must_remain_byte_identical(tmp_path: Path, producer_os: str) -> None:
+    def mutate(root: Path) -> None:
+        raw = (root / "policy-cpu/quality.json").read_bytes()
+        _replace_quality_before_full_reseal(root, raw, stdout=raw.replace(b'": ', b'":  ', 1))
+
+    root, toolchain = _build_component(tmp_path, producer_os=producer_os, mutate_before_seal=mutate)
+    with pytest.raises(PolicyCPUComponentError, match="byte-identical"):
+        verify_policy_cpu_development_component(root, expected_toolchain=toolchain, gate_relative=GATE_RELATIVE)
+
+
+def test_fully_resigned_quality_cannot_select_an_unregistered_os_runtime_pair(tmp_path: Path) -> None:
+    root, toolchain = _build_component(tmp_path, producer_os="Darwin")
+    with pytest.raises(PolicyCPUComponentError, match="OS/runtime pair"):
+        verify_policy_cpu_development_component(root, expected_toolchain=toolchain, gate_relative=GATE_RELATIVE)
+
+
+def test_quality_encoding_exception_does_not_relax_other_component_json(tmp_path: Path) -> None:
+    def mutate(root: Path) -> None:
+        path = root / "policy-cpu/execution.json"
+        path.write_bytes(json.dumps(_read_json(path), ensure_ascii=False, sort_keys=True).encode("utf-8") + b"\n")
+
+    root, toolchain = _build_component(tmp_path, mutate_before_seal=mutate)
+    with pytest.raises(PolicyCPUComponentError, match="canonical byte encoding"):
         verify_policy_cpu_development_component(root, expected_toolchain=toolchain, gate_relative=GATE_RELATIVE)
 
 

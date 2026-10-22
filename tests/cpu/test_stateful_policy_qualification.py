@@ -407,6 +407,10 @@ def test_gpu_runner_fails_before_subprocess_output_or_environment_creation(
 
 def test_junit_requires_new_policy_regressions_to_have_executed_not_skipped(tmp_path: Path) -> None:
     # This exercises only the named-regression projection, not a public profile.
+    assert {
+        "test_actual_quality_main_native_wire_matches_the_quality_specific_reader",
+        "test_real_quality_producer_wire_survives_full_portable_component",
+    } <= policy_qualification.REQUIRED_EXECUTED_REGRESSIONS
     document = ET.Element("testsuite")
     for name in sorted(policy_qualification.REQUIRED_EXECUTED_REGRESSIONS):
         ET.SubElement(document, "testcase", name=name, classname="unit_only")

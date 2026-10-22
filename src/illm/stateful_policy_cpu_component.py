@@ -420,8 +420,40 @@ def _verify_inputs(root: Path, portable: Mapping[str, Any]) -> dict[str, Any]:
     return report
 
 
-def _verify_quality(path: Path) -> dict[str, Any]:
-    quality = _read_json(path, label="quality report")
+def _read_quality_json(
+    path: Path, *, producer_os: str, runtime_profile_id: str,
+) -> dict[str, Any]:
+    # This one legacy producer uses json.dumps' spaced representation and
+    # text-mode native newlines. All other component JSON remains compact LF.
+    newline = {
+        ("Windows", "py312-win-amd64-cpu"): b"\r\n",
+        ("Linux", "py312-linux-x86_64-cpu"): b"\n",
+    }.get((producer_os, runtime_profile_id))
+    if newline is None:
+        _fail("quality producer OS/runtime pair is not registered")
+    checked = _plain_file(path, label="quality report")
+    try:
+        raw = checked.read_bytes()
+    except OSError as exc:
+        raise PolicyCPUComponentError("could not read quality report") from exc
+    quality = _decode_json(raw, label="quality report")
+    if not isinstance(quality, dict):
+        _fail("quality report must contain one JSON object")
+    try:
+        expected = json.dumps(
+            quality, ensure_ascii=False, sort_keys=True, allow_nan=False,
+        ).encode("utf-8") + newline
+    except (TypeError, ValueError) as exc:
+        raise PolicyCPUComponentError("quality report is not finite UTF-8 JSON") from exc
+    if raw != expected:
+        _fail("quality report does not match its exact producer wire encoding")
+    return quality
+
+
+def _verify_quality(
+    path: Path, *, producer_os: str, runtime_profile_id: str,
+) -> dict[str, Any]:
+    quality = _read_quality_json(path, producer_os=producer_os, runtime_profile_id=runtime_profile_id)
     if set(quality) != {"schema_version", "checked_python_files", "issues", "type_check", "status"}:
         _fail("quality report fields differ")
     checked = quality.get("checked_python_files")
@@ -740,8 +772,12 @@ def _verify_cpu(
     root: Path,
     portable: Mapping[str, Any],
     gate_relative: str,
+    *,
+    producer_os: str,
 ) -> tuple[dict[str, Any], dict[str, int], dict[str, dict[str, Any]]]:
-    quality = _verify_quality(root / "quality.json")
+    quality = _verify_quality(
+        root / "quality.json", producer_os=producer_os, runtime_profile_id=portable["runtime_profile_id"],
+    )
     junit = _verify_junit(root / "junit.xml")
     commands, logs = _verify_execution(root, gate_relative, portable)
     if (root / "logs/quality.stdout.txt").read_bytes() != (root / "quality.json").read_bytes():
@@ -915,7 +951,9 @@ def verify_policy_cpu_development_component(
         for stage in CPU_STAGES
     }
     _verify_inputs(checked / STAGE_DIRECTORIES["inputs"], portable)
-    quality, junit, logs = _verify_cpu(checked / STAGE_DIRECTORIES["cpu"], portable, relative)
+    quality, junit, logs = _verify_cpu(
+        checked / STAGE_DIRECTORIES["cpu"], portable, relative, producer_os=toolchain["os"],
+    )
     _verify_verified(checked / STAGE_DIRECTORIES["verify"], portable, relative, stages)
     journal = _verify_journal(checked, portable, relative, stages)
 

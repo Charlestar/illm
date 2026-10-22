@@ -103,6 +103,8 @@ REQUIRED_EXECUTED_REGRESSIONS = CRITICAL_TESTS | frozenset({
     "test_actual_explicit_legacy_none_is_a_new_full_context_request",
     "test_archived_proof_is_recomputed_without_upgrading_qualification",
     "test_proof_reader_import_is_stdlib_only_in_isolated_python",
+    "test_actual_quality_main_native_wire_matches_the_quality_specific_reader",
+    "test_real_quality_producer_wire_survives_full_portable_component",
 })
 
 
