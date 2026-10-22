@@ -19,6 +19,10 @@
   A separate [CPU raw evidence tool](implementation/v0.2-policy-cpu-raw-evidence.md)
   retains fixed tiny raw tensors and offers stdlib recomputation; it is not yet
   the integrated full protocol/profile/release chain and never grants GPU status.
+  New sibling schema3/contract-revision2 CPU profile and rollback-v2 tools are
+  described in the [integration runbook](implementation/v0.2-policy-cpu-profile-runbook.md).
+  Their presence does not establish a fresh-source passing run, clean-room
+  execution, CI success, GPU qualification or a V0.2 release.
 
 - The engine supports one accepted non-terminal request. A concurrent offer is
   rejected with `SINGLE_ACTIVE_LIMIT`; there is no queue, fairness policy,

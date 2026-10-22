@@ -26,6 +26,11 @@ The approved CPU numerical slice also has a separate
 It preserves fixed tiny tensors rather than treating JUnit as portable numerical
 evidence. It remains CPU-only and unqualified; GPU work is deferred.
 
+The next integration surface has its own
+[policy-aware CPU profile runbook](docs/implementation/v0.2-policy-cpu-profile-runbook.md):
+schema3/contract-revision2 evidence and rollback-v2 are separate from the frozen
+historical readers. Script availability is not a passed profile or a new release.
+
 ## V0.0 quickstart
 
 Run these commands in a separate checkout of tag `v0.0.0`, not the V0.1
