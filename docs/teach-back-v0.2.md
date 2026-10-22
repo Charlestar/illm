@@ -231,6 +231,17 @@ CLI 可显式使用 `--numerical-policy candidate-fp32`；fp16/bf16 selector 要
 适配路径。省略 selector 保留旧 C0。schema3 只支持 trace；state/execute/what-if
 仍明确拒绝，policy 身份不会增加 replay 能力。
 
+### 8.3 从断言走向可重算的数值证据
+
+[CPU raw evidence 工具](implementation/v0.2-policy-cpu-raw-evidence.md)保存公开 tiny
+输入与实际张量字节，再由不导入 Torch 的 reader 重算比较、序列和采样状态。
+学习时先找首个失败 case/step/op，再区分 shape、有限性、逐元素误差和 token 序列；
+不要从最终 token 相同推断所有算子相同，也不要从 B/C 相同推断数学语义正确。
+普通 Transformers、独立 FP64、原 golden 和故意错误反例分别约束不同风险。
+
+这是独立的 CPU 开发证据入口，不会把旧三阶段驱动的报告追认为已保存 raw tensors。
+完整协议总轴仍缺真实模型 GPU 证据，不能发布 V0.2 或声称加速。
+
 ## 9. 自检问题
 
 1. 为什么 `output_count=4` 时 contiguous KV 可能只有 `prompt+3` 个 valid tokens？

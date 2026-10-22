@@ -21,6 +21,11 @@ KV, streaming, cancellation and R0 Request Story. It is not yet qualified or
 tagged. Use an independent checkout of `v0.1.0` for the published learning
 version; do not confuse development tests with a released checkpoint.
 
+The approved CPU numerical slice also has a separate
+[raw evidence and offline recomputation guide](docs/implementation/v0.2-policy-cpu-raw-evidence.md).
+It preserves fixed tiny tensors rather than treating JUnit as portable numerical
+evidence. It remains CPU-only and unqualified; GPU work is deferred.
+
 ## V0.0 quickstart
 
 Run these commands in a separate checkout of tag `v0.0.0`, not the V0.1

@@ -16,6 +16,9 @@
   implementation digest; it is not yet a portable standalone wheel interface.
   The ordered CPU driver is a `DEVELOPMENT_ONLY` check, not the full retained
   raw-tensor/portable qualification report.
+  A separate [CPU raw evidence tool](implementation/v0.2-policy-cpu-raw-evidence.md)
+  retains fixed tiny raw tensors and offers stdlib recomputation; it is not yet
+  the integrated full protocol/profile/release chain and never grants GPU status.
 
 - The engine supports one accepted non-terminal request. A concurrent offer is
   rejected with `SINGLE_ACTIVE_LIMIT`; there is no queue, fairness policy,
