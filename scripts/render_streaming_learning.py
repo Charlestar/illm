@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import os
+import stat
 import sys
 from pathlib import Path
 from typing import Sequence
@@ -12,6 +14,27 @@ from illm.domain.errors import ErrorCode, IllmError
 from illm.streaming_learning import derive_streaming_learning_assets, verify_streaming_learning_assets
 
 
+def _plain_absolute(path: Path, *, label: str) -> Path:
+    """Keep caller-visible path topology so capture/output links fail closed."""
+    absolute = Path(os.path.abspath(os.fspath(path)))
+    for candidate in (absolute, *absolute.parents):
+        try:
+            info = candidate.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            raise IllmError(
+                ErrorCode.INVALID_ARGUMENT,
+                f"{label} path is unreadable",
+            ) from exc
+        if stat.S_ISLNK(info.st_mode) or int(getattr(info, "st_file_attributes", 0)) & 0x400:
+            raise IllmError(
+                ErrorCode.INVALID_ARGUMENT,
+                f"{label} path cannot contain links or reparse points",
+            )
+    return absolute
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("capture", type=Path)
@@ -19,11 +42,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--verify-existing", action="store_true", help="read-only exact regeneration check")
     args = parser.parse_args(argv)
     try:
-        requested = args.output
-        if requested.is_symlink():
-            raise IllmError(ErrorCode.INVALID_ARGUMENT, "learning output cannot be a symbolic link")
-        output = requested.resolve()
-        capture = args.capture.resolve()
+        output = _plain_absolute(args.output, label="learning output")
+        capture = _plain_absolute(args.capture, label="capture")
         if output.is_relative_to(capture) or capture.is_relative_to(output):
             raise IllmError(ErrorCode.INVALID_ARGUMENT, "learning output must be separate from the immutable capture")
         if args.verify_existing:

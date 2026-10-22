@@ -100,8 +100,12 @@ See the [V0.2 teach-back](docs/teach-back-v0.2.md),
 An opt-in [numerical-policy CPU example](docs/examples/v0_2_policy_cpu.py)
 separates candidate full-recompute B from true-KV C with the same explicit policy
 digest. Run it through the freshly bootstrapped source-bound wrapper. It does
-not replace V0.1 or the old development defaults; new-policy capture and CUDA
-are rejected while their qualification/migration work remains pending.
+not replace V0.1 or the old development defaults. CPU policy-aware schema3
+capture, its separate offline reader and derived R0 learning views are available
+in the [capture example](docs/examples/v0_2_policy_capture.py); run it through
+the same fresh wrapper with a new `--output` directory. The CLI also accepts
+`--numerical-policy candidate-fp32` explicitly. CUDA remains rejected before
+model loading; capture3 does not grant R1/R2/R3 or release qualification.
 See the [CPU checkpoint runbook](docs/implementation/v0.2-policy-cpu-checkpoint.md)
 for the ordered, source-bound development checks and the remaining release gates.
 

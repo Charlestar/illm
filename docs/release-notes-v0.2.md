@@ -10,9 +10,10 @@
 - Accepted numerical-policy SPEC v3/ADR-007 and an opt-in CPU development slice:
   immutable policy/input identities, rowwise full-recompute B/true-KV C, ordinary
   Transformers and independent FP64 tiny checks, and schema3 live results.
-  Policy-aware capture3 and full portable qualification/release/rollback remain
-  pending; new-policy capture and CUDA requests fail closed rather than claim
-  old-format or GPU support. Existing unrecorded development calls stay schema2.
+  CPU policy-aware capture3, its tensor-free reader and derived R0 learning views
+  are implemented. Full raw/portable qualification and release/rollback migration
+  remain pending; CUDA requests fail before model loading. Existing unrecorded
+  development calls stay schema2; the CLI policy selector is explicit, not default.
 
 - A separate stateful `illm.engine.streaming.Engine` facade with single-request
   `generate()` and ordered `stream()` entry points.
@@ -28,7 +29,7 @@
   between terminal decision and terminal-ready cleanup.
 - schema2 metadata-only capture, typed stateful events, R0 Request Story, derived
   Chrome trace, and fail-closed rejection of higher replay modes, for the retained
-  unrecorded C0 path only; explicit policy capture3 remains pending.
+  unrecorded C0 path, plus a separate policy-aware schema3 family with exactly R0.
 - Experimental `MetricRegistryV1` with five frozen, fully-qualified streaming
   metric definitions and deterministic report/conformance validation.
 - Local CLI commands `run`, `verify --fixture tiny-decoder` and `inspect request`.
@@ -59,7 +60,7 @@ capacity-256 profiles or the upstream model revision.
   second interrupt uses emergency abandon and exits 130 without claiming safe
   release.
 - Captures on the retained unrecorded C0 path default to metadata-only and R0.
-  Explicit-policy capture is rejected while capture3 is pending. The live result may expose text and
+  Explicit-policy schema3 capture is also metadata-only and R0. The live result may expose text and
   token IDs, but the capture does not retain them by implication.
 
 ## Evidence status

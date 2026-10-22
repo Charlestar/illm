@@ -9,9 +9,9 @@
 - The explicit numerical-policy CPU slice uses a separately versioned rowwise
   FP32-contraction candidate, not a replacement for the frozen V0.1 reference.
   It is opt-in; result/metadata schema3 and MemoryPlan2 do not imply a released
-  format. Policy-aware capture3, full numerical raw/portable qualification and
-  release/rollback migration are pending. Explicit-policy capture is rejected
-  before acceptance, and explicit-policy CUDA is rejected before model loading.
+  format. CPU policy-aware capture3 and its separate portable R0 reader are
+  implemented; full numerical raw/portable qualification and release/rollback
+  migration remain pending. Explicit-policy CUDA is rejected before model loading.
   This development API requires the local source workspace to bind its current
   implementation digest; it is not yet a portable standalone wheel interface.
   The ordered CPU driver is a `DEVELOPMENT_ONLY` check, not the full retained
@@ -55,8 +55,22 @@
 
 ## Observability and replay
 
-- schema2 capture on the retained unrecorded C0 path is metadata-only and has
-  capability exactly `[R0]`. Explicit-policy capture is still rejected. It omits
+- The new JSON Schemas document development envelopes, not a complete independent
+  validator. Nested fields and kind/code relationships remain underconstrained
+  there. Always use the policy capture reader for closed payloads, canonical
+  digests, plan/event cross-bindings and lifecycle verification; schema-only
+  validation cannot establish capture validity.
+
+- Policy-aware fault learning views are derived host-event chronology, not a
+  profiler or benchmark. An interrupted forward has no measured completion or
+  duration; the view must not substitute terminal-ready time for either.
+- Standalone `inspect --chrome-trace` uses non-overwriting hard-link publication.
+  A filesystem without hard-link support fails closed; it does not fall back to
+  replacing an existing destination. Capture/learning roots may be new or empty;
+  example roots must not already exist.
+
+- schema2 capture on the retained unrecorded C0 path and explicit-policy schema3
+  capture are metadata-only and have capability exactly `[R0]`. Both omit
   raw prompt/text, token IDs, logits and activation values. Live CLI results may
   contain token IDs and text, but those values are not silently copied into the
   capture.

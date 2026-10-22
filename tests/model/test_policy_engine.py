@@ -62,15 +62,16 @@ def test_gpu_policy_rejected_before_model_loader_or_cuda_initialization() -> Non
         loader.assert_not_called()
 
 
-def test_new_policy_never_writes_a_mislabeled_old_capture(tmp_path: Path) -> None:
-    capture = tmp_path / "must-not-exist"
+def test_new_policy_writes_a_separate_schema3_capture(tmp_path: Path) -> None:
+    capture = tmp_path / "policy-capture"
     engine = Engine(numerical_policy=candidate_policy("fp32"))
     try:
-        with pytest.raises(IllmError, match="schema3 capture writer"):
-            engine.generate(_request(engine, capture=capture))
-        assert not capture.exists()
-        assert engine.last_result is None
-        assert engine.last_events == ()
+        result = engine.generate(_request(engine, capture=capture))
+        import json
+        manifest = json.loads((capture / "capture-manifest.json").read_text(encoding="utf-8"))
+        assert manifest["schema_version"] == 3
+        assert result.capture_manifest_digest == manifest["manifest_digest"]
+        assert all(event.event_catalog == "illm-stateful-v02-policy-v1" for event in engine.last_events)
     finally:
         assert engine.close(timeout=1.0)
 

@@ -7,6 +7,7 @@ import json
 import os
 import secrets
 import signal
+import stat
 import sys
 import threading
 import time
@@ -18,6 +19,7 @@ from typing import Any, Mapping, TextIO, TypeVar
 from illm.canonical import canonical_json_bytes, canonical_json_text
 from illm.domain.errors import EXIT_CODE, EmergencyAbandon, ErrorCode, IllmError
 from illm.sampling import SamplingSpec
+from illm.numerical_policy import candidate_policy, legacy_policy
 
 
 DEFAULT_MEMORY_BUDGET_BYTES = 6 * 1024**3
@@ -46,6 +48,9 @@ def add_streaming_commands(
     run.add_argument("--seed", type=int)
     run.add_argument("--add-bos", action=argparse.BooleanOptionalAction, default=None)
     run.add_argument("--kv-mode", choices=("none", "contiguous"), default="contiguous")
+    run.add_argument("--numerical-policy", choices=(
+        "candidate-fp32", "candidate-fp16", "candidate-bf16", "legacy-fp32", "legacy-fp16", "legacy-bf16",
+    ), help="explicit versioned arithmetic; omission preserves historical C0 diagnostics")
     run.add_argument("--max-context-tokens", type=int)
     run.add_argument("--memory-budget-bytes", type=int, default=DEFAULT_MEMORY_BUDGET_BYTES)
     run.add_argument("--request-id", default="req-0001")
@@ -235,6 +240,11 @@ def _run(args: argparse.Namespace) -> int:
     sampling = _sampling(args)
     Engine, GenerationRequest, MetadataChunk, TokenChunk, TerminalChunk = _streaming_api()
     model = args.model_config if args.model_config is not None else args.model
+    policy_options: dict[str, Any] = {}
+    policy_selector = getattr(args, "numerical_policy", None)
+    if policy_selector is not None:
+        family, dtype = policy_selector.split("-", 1)
+        policy_options["numerical_policy"] = candidate_policy(dtype) if family == "candidate" else legacy_policy(dtype)
     engine = Engine(
         model=model,
         device=args.device,
@@ -242,6 +252,7 @@ def _run(args: argparse.Namespace) -> int:
         max_context_tokens=args.max_context_tokens,
         memory_budget_bytes=args.memory_budget_bytes,
         project_root=None,
+        **policy_options,
     )
     controller: _InterruptController | None = None
     previous_handler: Any = None
@@ -383,25 +394,73 @@ def _verify(args: argparse.Namespace) -> int:
 
 
 def _streaming_bundle(path: Path) -> Any:
-    from illm.capture.streaming import StreamingCaptureBundle
+    from illm.capture.dispatch import open_streaming_capture
 
-    return StreamingCaptureBundle.open(path)
+    return open_streaming_capture(path)
+
+
+def _plain_output_path(path: Path) -> Path:
+    absolute = Path(os.path.abspath(os.fspath(path)))
+    for candidate in (absolute, *absolute.parents):
+        try:
+            info = candidate.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            raise IllmError(
+                ErrorCode.INVALID_ARGUMENT,
+                "--chrome-trace output path is unreadable",
+                {"path": str(candidate)},
+            ) from exc
+        if stat.S_ISLNK(info.st_mode) or int(getattr(info, "st_file_attributes", 0)) & 0x400:
+            raise IllmError(
+                ErrorCode.INVALID_ARGUMENT,
+                "--chrome-trace output cannot follow a link or reparse point",
+                {"path": str(candidate)},
+            )
+    return absolute
 
 
 def _write_new_json(path: Path, value: Mapping[str, Any]) -> None:
-    resolved = path.resolve()
-    if resolved.exists() or resolved.is_symlink():
+    destination = _plain_output_path(path)
+    if destination.exists() or destination.is_symlink():
         raise IllmError(ErrorCode.INVALID_ARGUMENT, "--chrome-trace output already exists")
-    resolved.parent.mkdir(parents=True, exist_ok=True)
-    temporary = resolved.with_name(f".{resolved.name}.tmp-{os.getpid()}")
     try:
-        with temporary.open("wb") as stream:
-            stream.write(canonical_json_bytes(dict(value)) + b"\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, resolved)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise IllmError(ErrorCode.INVALID_ARGUMENT, "--chrome-trace output parent could not be created") from exc
+    destination = _plain_output_path(path)
+    if destination.exists() or destination.is_symlink():
+        raise IllmError(ErrorCode.INVALID_ARGUMENT, "--chrome-trace output already exists")
+    temporary = destination.with_name(
+        f".{destination.name}.tmp-{os.getpid()}-{secrets.token_hex(16)}"
+    )
+    owns_temporary = False
+    try:
+        try:
+            with temporary.open("xb") as stream:
+                owns_temporary = True
+                stream.write(canonical_json_bytes(dict(value)) + b"\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+        except FileExistsError as exc:
+            raise IllmError(
+                ErrorCode.INVALID_ARGUMENT,
+                "--chrome-trace temporary output already exists",
+            ) from exc
+        _plain_output_path(path)
+        try:
+            os.link(temporary, destination)
+        except FileExistsError as exc:
+            raise IllmError(ErrorCode.INVALID_ARGUMENT, "--chrome-trace output already exists") from exc
+        except OSError as exc:
+            raise IllmError(
+                ErrorCode.INVALID_ARGUMENT,
+                "--chrome-trace output could not be published without overwrite",
+            ) from exc
     finally:
-        temporary.unlink(missing_ok=True)
+        if owns_temporary:
+            temporary.unlink(missing_ok=True)
 
 
 def _inspect_request(args: argparse.Namespace) -> int:
@@ -409,9 +468,9 @@ def _inspect_request(args: argparse.Namespace) -> int:
     story = bundle.request_story(args.request)
     if args.chrome_trace is not None:
         capture_root = Path(bundle.root).resolve()
-        trace_path = args.chrome_trace.resolve()
+        trace_path = _plain_output_path(args.chrome_trace)
         if trace_path == capture_root or trace_path.is_relative_to(capture_root):
             raise IllmError(ErrorCode.INVALID_ARGUMENT, "--chrome-trace cannot modify the immutable capture")
-        _write_new_json(trace_path, bundle.chrome_trace())
+        _write_new_json(args.chrome_trace, bundle.chrome_trace())
     print(canonical_json_text(story))
     return 0

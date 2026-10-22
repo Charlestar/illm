@@ -129,15 +129,16 @@ tiny profile 的最大 context 保持 256。新的 V0.2 real-model profile 是 5
 ## 6. Capture 能回答什么
 
 schema2 capture 使用独立 catalog `illm-stateful-v02-v1`，能力严格为 `[R0]`。
-这属于未显式policy的历史 C0 路径；新policy的capture3 writer 尚未实现，不能
-把 schema2 capture 冒充新数值策略证据。
+这属于未显式policy的历史 C0 路径。显式 policy 的 CPU 请求现在使用独立 schema3
+与 policy catalog，绑定 policy、protocol、execution 和 MemoryPlan；仍然只有 R0，
+不能把 schema2 capture 冒充新数值策略证据。
 默认 metadata-only：保存 phase、index、长度、fence/lease、时间关系和可选本地 HMAC，
 不保存 prompt、原始文本、token IDs、logits 或 HMAC key。live CLI 输出 token/result
 不代表落盘 capture 也保存这些内容。
 
 R0 Request Story 可以回答“先发生了什么、KV 在哪一步增长、terminal winner 是谁、
 何时完成回收”。它不能重建完整控制状态，不能重跑模型，也不能进行 what-if。
-对 schema2 请求 `state` replay 必须 fail closed；R1、R2、R3 都不是 V0.2 能力。
+对 schema2/3 请求 `state` replay 必须 fail closed；R1、R2、R3 都不是 V0.2 能力。
 
 ## 7. 五个指标如何不说谎
 
@@ -204,13 +205,31 @@ A仍是未修改的V0.1 reference，B不是自封oracle，C也不能只与共享
 FP64只验证tiny数学语义，不能代替真实BF16/FP16执行。schema3结果包含policy，
 旧schema2结果不追认身份；schema3不是R3 replay。
 
-此切片不支持新policy capture，传入capture会在acceptance前明确拒绝；不写
-隐藏新语义的schema2。GPU也明确拒绝。本例可学习数值身份与KV工作量，但不是
-交互式可视化、性能领先证明或已发布V0.2。
+CPU 新 policy capture 现在使用独立 schema3，不把新语义写入旧 schema2。
+GPU 仍在模型加载前明确拒绝。本例可学习数值身份与 KV 工作量，但不是
+交互式 Web UI、性能领先证明或已发布 V0.2。
 
 想核验完整CPU开发检查，可按[checkpoint runbook](implementation/v0.2-policy-cpu-checkpoint.md)
 在新环境依次运行`inputs`、`cpu`、`verify`。检查stdout/stderr、JUnit和checksum，
 不要仅凭目录或一个`pass`字段判断通过。该开发报告仍不是协议要求的完整raw tensor证据。
+
+### 8.2 观察新策略的请求时间线
+
+[capture 示例](examples/v0_2_policy_capture.py)实际执行 B、C 和首 token 后取消三种
+CPU 请求，逐个验证 capture，并生成 Request Story JSON、SVG/PNG 与 Chrome trace：
+
+```sh
+python scripts/in_env.py --manifest out/study-v02/toolchain.json --expected-manifest-digest-file out/study-v02/toolchain.sha256 -- python docs/examples/v0_2_policy_capture.py --output out/study-v02/policy-capture-demo
+```
+
+输出目录必须不存在。图像是已验证事件的离线派生视图，不是实时 UI 或 GPU kernel
+profiler。比较 B 的 `[6,7,8,9]` 与 C 的 `[6,1,1,1]`，再观察取消请求的 terminal、
+fence 和资源归零；不要将时间线当作性能基准。
+
+CLI 可显式使用 `--numerical-policy candidate-fp32`；fp16/bf16 selector 要与实际
+模型 storage dtype 相符，不会自动转换权重。`legacy-fp32 --kv-mode none` 仍走 A
+适配路径。省略 selector 保留旧 C0。schema3 只支持 trace；state/execute/what-if
+仍明确拒绝，policy 身份不会增加 replay 能力。
 
 ## 9. 自检问题
 

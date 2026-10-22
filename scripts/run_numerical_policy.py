@@ -36,7 +36,7 @@ ADR_DRAFT_SHA256 = "33133ac0a5d888e3175be9e2de1cdd1f2aa180e71d93d6591641af902300
 GPU_STAGES = frozenset({"gpu-pilot", "gpu-correctness", "gpu-benchmarks"})
 CPU_STAGES = ("inputs", "cpu", "verify")
 PENDING_WORK = (
-    "capture manifest schema3 writer and reader",
+    "full raw-tensor numerical qualification and final capture3 lifecycle/portable profile integration",
     "formal portable release qualification",
     "all GPU pilot, correctness, benchmark, lifecycle, and rollback evidence",
 )

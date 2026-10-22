@@ -83,10 +83,15 @@ def test_schema_one_cli_replays_controls_not_model_numbers(tmp_path: Path, capsy
     assert main(["replay", str(capture.root), "--mode", "state", "--step-id", "0"]) == 64
 
 
-@pytest.mark.parametrize("schema", [True, "1", 3])
+@pytest.mark.parametrize("schema", [True, "1", 4])
 def test_cli_never_guesses_unknown_capture_schema(tmp_path: Path, schema: object) -> None:
     (tmp_path / "capture-manifest.json").write_text(json.dumps({"schema_version": schema}), encoding="utf-8")
     assert main(["replay", str(tmp_path), "--mode", "trace"]) == 78
+
+
+def test_cli_recognizes_schema3_but_requires_complete_verified_facts(tmp_path: Path) -> None:
+    (tmp_path / "capture-manifest.json").write_text(json.dumps({"schema_version": 3}), encoding="utf-8")
+    assert main(["replay", str(tmp_path), "--mode", "trace"]) == 75
 
 
 def test_cli_distinguishes_corrupt_and_missing_capture_manifests(tmp_path: Path) -> None:

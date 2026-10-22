@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Development envelope documentation only. Kind/code/criticality binding, closed per-kind payloads, plan coverage and lifecycle are validated by the authoritative policy capture reader, not by this JSON Schema alone.",
+  "$id": "https://illm.local/schemas/policy-streaming-event-envelope-v1.schema.json",
+  "title": "iLLM V0.2 Policy Streaming Event Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_envelope_version",
+    "event_catalog",
+    "producer",
+    "producer_seq_no",
+    "monotonic_ns",
+    "clock_domain",
+    "kind",
+    "kind_code",
+    "replay_critical",
+    "payload"
+  ],
+  "properties": {
+    "event_envelope_version": {"const": 1},
+    "event_catalog": {"const": "illm-stateful-v02-policy-v1"},
+    "producer": {"type": "string", "minLength": 1},
+    "producer_seq_no": {"type": "integer", "minimum": 0},
+    "monotonic_ns": {"type": "integer", "minimum": 0},
+    "clock_domain": {"const": "host.perf_counter_ns"},
+    "kind": {
+      "enum": [
+        "request.tokenized",
+        "request.accepted",
+        "request.phase_changed",
+        "request.first_token",
+        "request.output_chunk",
+        "request.completed",
+        "request.cancel_requested",
+        "request.cancelled",
+        "request.failed",
+        "request.terminal_decided",
+        "model.forward_started",
+        "model.forward_completed",
+        "model.forward",
+        "kv.allocation_committed",
+        "kv.write_started",
+        "kv.write_committed",
+        "kv.write_aborted",
+        "kv.page_released",
+        "clock_snapshot"
+      ]
+    },
+    "kind_code": {"type": "integer", "minimum": 2000, "maximum": 2300},
+    "replay_critical": {"type": "boolean"},
+    "payload": {"type": "object"}
+  }
+}

@@ -24,6 +24,7 @@ from typing import Any, Generator, Sequence
 from illm import __version__
 from illm.canonical import canonical_json_bytes, sha256_json
 from illm.capture.streaming import StreamingCaptureSession
+from illm.capture.policy_streaming import PolicyStreamingCaptureSession
 from illm.domain.errors import EmergencyAbandon, ErrorCode, IllmError
 from illm.domain.events import DomainEvent, EventKind
 from illm.domain.streaming_events import StreamingEvent, StreamingEventKind as K
@@ -52,7 +53,7 @@ class _RequestRuntime:
     input_ids: tuple[int, ...]
     detokenizer: IncrementalDetokenizer
     sampling: SamplingState
-    session: StreamingCaptureSession | None
+    session: StreamingCaptureSession | PolicyStreamingCaptureSession | None
     tokenization_started_ns: int
     tokenization_ended_ns: int
     privacy_key: bytes = field(default_factory=lambda: secrets.token_bytes(32))
@@ -282,10 +283,6 @@ class Engine:
                 self._seen_ids.add(request.request_id)
             if request.model_spec_id != self.model_spec_id:
                 raise IllmError(ErrorCode.UNSUPPORTED, "request model_spec_id differs from loaded model")
-            if self.numerical_policy is not None and request.capture is not None:
-                # Never emit a schema2 capture with hidden new-policy semantics.
-                # The separately versioned schema3 writer is a subsequent slice.
-                raise IllmError(ErrorCode.UNSUPPORTED, "policy-aware schema3 capture writer is not implemented yet")
             started = perf_counter_ns()
             if request.prompt is not None:
                 input_ids = self._loaded.tokenizer.encode(request.prompt, add_bos=request.add_bos)
@@ -302,11 +299,21 @@ class Engine:
             self.memory_plan.require_admission(len(input_ids) + request.max_new_tokens)
             executor = (EagerExecutor(self._loaded, self.kv_mode, self.capacity, numerical_policy=self.numerical_policy)
                         if self.numerical_policy is not None else EagerExecutor(self._loaded, self.kv_mode, self.capacity))
-            session = None
+            session: StreamingCaptureSession | PolicyStreamingCaptureSession | None = None
             if request.capture is not None:
                 try:
-                    session = StreamingCaptureSession(request.capture, self._identity, request.request_id,
-                                                      request.sampling.to_dict(), self.memory_plan.to_dict())
+                    if self.numerical_policy is not None:
+                        assert self._execution_binding is not None
+                        session = PolicyStreamingCaptureSession(
+                            request.capture, self._identity, request.request_id,
+                            request.sampling.to_dict(), self.memory_plan.to_dict(),
+                            numerical_policy=self.numerical_policy.to_dict(),
+                            execution_binding=self._execution_binding.to_dict(),
+                            observation_profile=request.telemetry,
+                        )
+                    else:
+                        session = StreamingCaptureSession(request.capture, self._identity, request.request_id,
+                                                          request.sampling.to_dict(), self.memory_plan.to_dict())
                 except (OSError, IllmError) as exc:
                     raise IllmError(ErrorCode.CAPTURE_INCOMPLETE, "required capture could not be created before acceptance") from exc
             runtime = _RequestRuntime(request, executor, input_ids, self._detokenizers.new(),

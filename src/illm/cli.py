@@ -10,6 +10,7 @@ from typing import NoReturn, Sequence
 
 from illm.canonical import canonical_json_text
 from illm.capture import CaptureBundle
+from illm.capture.dispatch import capture_schema, open_streaming_capture
 from illm.domain.errors import EXIT_CODE, ErrorCode, IllmError
 from illm.reference_qualification import reference_source_identity
 from illm.release import verify_release_bundle, write_verified_release_state
@@ -111,24 +112,12 @@ def _demo(args: argparse.Namespace) -> int:
 
 
 def _replay(args: argparse.Namespace) -> int:
-    # Read only the version discriminator; the selected reader then verifies
-    # exact fields, duplicate keys, file hashes, state digests and completeness.
-    try:
-        header = json.loads((args.capture / "capture-manifest.json").read_text(encoding="utf-8"))
-    except OSError as exc:
-        raise IllmError(ErrorCode.CAPTURE_INCOMPLETE, "capture manifest is missing or unreadable") from exc
-    except ValueError as exc:
-        raise IllmError(ErrorCode.CAPTURE_CORRUPT, "capture manifest is not valid JSON") from exc
-    schema = header.get("schema_version") if isinstance(header, dict) else None
-    if type(schema) is not int or schema not in {0, 1, 2}:
-        raise IllmError(ErrorCode.UNSUPPORTED_SCHEMA, "unsupported capture schema")
-    if schema == 2:
-        from illm.capture.streaming import StreamingCaptureBundle
-
+    schema = capture_schema(args.capture)
+    if schema in {2, 3}:
         if args.mode != "trace" or args.assert_state_digest or args.step_id is not None:
             raise IllmError(ErrorCode.UNSUPPORTED_SCHEMA, "stateful V0.2 capture supports R0 trace only",
                             {"capabilities": ["R0"], "missing": ["control_checkpoint", "state_deltas", "numerical_inputs", "RNG_reexecution_inputs"]})
-        streaming = StreamingCaptureBundle.open(args.capture)
+        streaming = open_streaming_capture(args.capture)
         request_id = args.request_id or str(streaming.manifest["request_id"])
         print(canonical_json_text(streaming.request_story(request_id)))
         return 0

@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Development envelope documentation only. Nested metadata, canonical digests, policy/plan/execution cross-bindings and event lifecycle require the authoritative PolicyStreamingCaptureBundle reader; JSON Schema validation alone does not verify a capture.",
+  "$id": "https://illm.local/schemas/streaming-capture-manifest-v3.schema.json",
+  "title": "iLLM V0.2 Policy Streaming Capture Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "finalized",
+    "event_envelope_version",
+    "event_catalog",
+    "capabilities",
+    "privacy_mode",
+    "replayable",
+    "non_replayable_reasons",
+    "critical_event_drop_count",
+    "request_id",
+    "identity",
+    "sampling_spec",
+    "sampling_spec_digest",
+    "memory_plan",
+    "memory_plan_digest",
+    "numerical_policy",
+    "numerical_policy_digest",
+    "execution_binding",
+    "execution_binding_digest",
+    "protocol_sha256",
+    "observation_profile",
+    "event_count",
+    "logical_terminal_outcome",
+    "terminal_outcome",
+    "files",
+    "manifest_digest"
+  ],
+  "allOf": [
+    {
+      "if": {"properties": {"finalized": {"const": true}}},
+      "then": {
+        "properties": {
+          "replayable": {"const": true},
+          "critical_event_drop_count": {"const": 0},
+          "non_replayable_reasons": {"const": []}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"replayable": {"const": true}}},
+      "then": {"properties": {"finalized": {"const": true}}}
+    }
+  ],
+  "properties": {
+    "schema_version": {"const": 3},
+    "finalized": {"type": "boolean"},
+    "event_envelope_version": {"const": 1},
+    "event_catalog": {"const": "illm-stateful-v02-policy-v1"},
+    "capabilities": {"const": ["R0"]},
+    "privacy_mode": {"const": "metadata_only"},
+    "replayable": {"type": "boolean"},
+    "non_replayable_reasons": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "critical_event_drop_count": {"type": "integer", "minimum": 0},
+    "request_id": {"type": "string", "minLength": 1},
+    "identity": {"type": "object"},
+    "sampling_spec": {"type": "object"},
+    "sampling_spec_digest": {"$ref": "#/$defs/digest"},
+    "memory_plan": {"type": "object"},
+    "memory_plan_digest": {"$ref": "#/$defs/digest"},
+    "numerical_policy": {"type": "object"},
+    "numerical_policy_digest": {"$ref": "#/$defs/digest"},
+    "execution_binding": {"type": "object"},
+    "execution_binding_digest": {"$ref": "#/$defs/digest"},
+    "protocol_sha256": {"$ref": "#/$defs/digest"},
+    "observation_profile": {"enum": ["off", "metrics", "request", "ops"]},
+    "event_count": {"type": "integer", "minimum": 0},
+    "logical_terminal_outcome": {
+      "type": ["string", "null"],
+      "enum": ["FINISHED", "CANCELLED", "FAILED", null]
+    },
+    "terminal_outcome": {
+      "type": ["string", "null"],
+      "enum": ["FINISHED", "CANCELLED", "FAILED", null]
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["events.jsonl", "checksums.json"],
+      "properties": {
+        "events.jsonl": {"$ref": "#/$defs/digest"},
+        "checksums.json": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "manifest_digest": {"$ref": "#/$defs/digest"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
