@@ -23,6 +23,7 @@ import re
 import stat
 import struct
 from typing import Any, BinaryIO, NoReturn, cast
+from uuid import UUID
 
 from illm.canonical import canonical_json_bytes, sha256_bytes, sha256_json
 from illm.numerical_policy import parse_policy
@@ -177,6 +178,17 @@ def _sha(value: object, *, label: str) -> str:
     if type(value) is not str or _SHA256.fullmatch(value) is None:
         _fail(f"{label} must be a lowercase SHA-256")
     return value
+
+
+def _uuid4(value: object, *, label: str) -> str:
+    text = _string(value, label=label)
+    try:
+        parsed = UUID(text)
+    except (AttributeError, ValueError):
+        _fail(f"{label} must be a canonical UUIDv4")
+    if parsed.version != 4 or str(parsed) != text:
+        _fail(f"{label} must be a canonical UUIDv4")
+    return text
 
 
 def _json_equal(left: object, right: object) -> bool:
@@ -431,8 +443,9 @@ def _validate_binding(worker: _Worker) -> dict[str, Any]:
         _fail(f"{worker.role} requires a source-bound finalized toolchain")
     if toolchain.get("binding") != "source-bound-manifest":
         _fail(f"{worker.role} toolchain is not source-bound")
-    for name in ("manifest_digest", "environment_id", "lock_digest"):
+    for name in ("manifest_digest", "lock_digest"):
         _sha(toolchain[name], label=f"toolchain {name}")
+    _uuid4(toolchain["environment_id"], label="toolchain environment_id")
     return binding
 
 

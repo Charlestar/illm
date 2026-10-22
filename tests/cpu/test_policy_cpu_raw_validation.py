@@ -15,6 +15,7 @@ import pytest
 from illm.canonical import canonical_json_bytes, sha256_bytes, sha256_json
 import illm.policy_cpu_raw_validation as validation
 from illm.policy_cpu_numerical_contract import (
+    PROTOCOL_SHA256,
     TINY_LOAD_MANIFEST_DIGEST,
     TINY_SPEC_ID,
     TINY_TOKENIZER_DIGEST,
@@ -106,6 +107,78 @@ def test_candidate_shape_registry_preserves_explicit_query_axis() -> None:
     assert validation._candidate_shape("layer.0.rope_q", 4) == (1, 4, 1, 8)
     assert validation._candidate_shape("layer.0.attention_scores", 4) == (1, 4, 1, 5)
     assert validation._native_shape("layer.0.q_projection", 5) == (1, 4, 5, 8)
+
+
+def _binding_worker(
+    *,
+    environment_id: str = "8e72088c-61cc-4dd9-846a-c1d43e107a3a",
+    manifest_digest: str = "a" * 64,
+    lock_digest: str = "b" * 64,
+) -> validation._Worker:
+    environment: dict[str, object] = {
+        "backend": "cpu",
+        "python_version": "3.12.14",
+        "platform": "Windows-11-10.0.26300-SP0",
+        "machine": "AMD64",
+        "torch_version": "2.8.0+cpu",
+        "cuda_arithmetic": "not_applicable",
+        "cuda_execution_authorized": False,
+    }
+    binding: dict[str, object] = {
+        "schema_version": 1,
+        "implementation_source_scope": "project-root-v1",
+        "implementation_source_digest": "c" * 64,
+        "environment": environment,
+        "environment_digest": sha256_json(environment),
+        "toolchain": {
+            "binding": "source-bound-manifest",
+            "manifest_digest": manifest_digest,
+            "environment_id": environment_id,
+            "lock_digest": lock_digest,
+        },
+        "protocol_sha256": PROTOCOL_SHA256,
+    }
+    return cast(
+        validation._Worker,
+        SimpleNamespace(
+            role="candidate",
+            report={"binding": binding, "binding_digest": sha256_json(binding)},
+        ),
+    )
+
+
+def test_execution_binding_accepts_real_builder_uuid4_shape() -> None:
+    worker = _binding_worker()
+    assert validation._validate_binding(worker) == worker.report["binding"]
+
+
+@pytest.mark.parametrize(
+    "environment_id",
+    (
+        "8e72088c61cc4dd9846ac1d43e107a3a",
+        "8E72088C-61CC-4DD9-846A-C1D43E107A3A",
+        "{8e72088c-61cc-4dd9-846a-c1d43e107a3a}",
+        "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+        "0" * 64,
+        "not-a-uuid",
+    ),
+)
+def test_execution_binding_rejects_noncanonical_or_non_v4_environment_id(
+    environment_id: str,
+) -> None:
+    with pytest.raises(validation.NumericalEvidenceError, match="canonical UUIDv4"):
+        validation._validate_binding(_binding_worker(environment_id=environment_id))
+
+
+@pytest.mark.parametrize("digest_field", ("manifest_digest", "lock_digest"))
+def test_execution_binding_digests_cannot_be_replaced_by_uuid(digest_field: str) -> None:
+    uuid_value = "8e72088c-61cc-4dd9-846a-c1d43e107a3a"
+    worker = _binding_worker(
+        manifest_digest=uuid_value if digest_field == "manifest_digest" else "a" * 64,
+        lock_digest=uuid_value if digest_field == "lock_digest" else "b" * 64,
+    )
+    with pytest.raises(validation.NumericalEvidenceError, match=f"toolchain {digest_field}"):
+        validation._validate_binding(worker)
 
 
 def _model_validation_workers() -> dict[str, validation._Worker]:
